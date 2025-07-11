@@ -67,12 +67,17 @@ async function fetchWithAuth(url, options = {}) {
 // 初始數據獲取
 async function getInitialData() {
     try {
-        // 獲取媒體文件列表
-        const mediaResponse = await fetch('/api/media');
-        const mediaFiles = mediaResponse.ok ? await mediaResponse.json() : [];
+        // 使用完整的媒體數據API
+        const response = await fetch('/api/media_with_settings');
+        if (!response.ok) {
+            throw new Error(`API請求失敗: ${response.status}`);
+        }
         
-        // 轉換為適合的格式
-        const media = mediaFiles.map((material, index) => ({
+        const data = await response.json();
+        console.log('獲取到的完整數據:', data);
+        
+        // 轉換materials為media格式以保持兼容性
+        const media = (data.materials || []).map((material, index) => ({
             id: material.id || `media_${index}`,
             filename: material.filename || material,
             name: material.filename || material,
@@ -82,14 +87,15 @@ async function getInitialData() {
         
         return {
             media,
-            groups: [],
-            assignments: [],
-            materials: media,
-            settings: {
+            groups: data.groups || [],
+            assignments: data.assignments || [],
+            materials: data.materials || [],
+            settings: data.settings || {
                 header_interval: 5,
                 carousel_interval: 6,
                 footer_interval: 7
-            }
+            },
+            available_sections: data.available_sections || appState.available_sections
         };
     } catch (error) {
         console.error('獲取初始數據失敗:', error);
@@ -98,7 +104,11 @@ async function getInitialData() {
             groups: [],
             assignments: [],
             materials: [],
-            settings: {}
+            settings: {
+                header_interval: 5,
+                carousel_interval: 6,
+                footer_interval: 7
+            }
         };
     }
 }
@@ -164,6 +174,27 @@ function renderMediaAndAssignments() {
     
     let html = '';
     appState.media.forEach(item => {
+        // 檢查這個媒體是否已被指派
+        const assignment = appState.assignments.find(a => a.content_id === item.id && a.content_type === 'single_media');
+        const isInGroup = appState.groups.some(group => 
+            group.materials && group.materials.some(material => material.id === item.id)
+        );
+        
+        let statusText = '在庫，未指派';
+        let statusClass = 'is-italic';
+        
+        if (assignment) {
+            const sectionName = appState.available_sections[assignment.section_key] || assignment.section_key;
+            statusText = `已指派到: ${sectionName}`;
+            statusClass = 'tag is-success is-light';
+        } else if (isInGroup) {
+            const group = appState.groups.find(group => 
+                group.materials && group.materials.some(material => material.id === item.id)
+            );
+            statusText = `在輪播組: ${group ? group.name : '未知組'}`;
+            statusClass = 'tag is-info is-light';
+        }
+        
         html += `
             <tr>
                 <td>
@@ -174,7 +205,7 @@ function renderMediaAndAssignments() {
                     <span>${item.filename || item.name}</span>
                 </td>
                 <td><span class="tag is-info is-light">${item.type === 'image' ? '圖片素材' : '影片素材'}</span></td>
-                <td><span class="is-italic">在庫，未指派</span></td>
+                <td><span class="${statusClass}">${statusText}</span></td>
                 <td class="actions-cell has-text-right">
                     <button class="button is-small is-info reassign-media-button" 
                             data-media-id="${item.id}"
@@ -203,10 +234,13 @@ function renderCarouselGroups() {
     
     let html = '';
     appState.groups.forEach(group => {
+        // 計算群組中的圖片數量
+        const imageCount = group.materials ? group.materials.length : 0;
+        
         html += `
             <tr>
                 <td>${group.name}</td>
-                <td>${group.image_count || 0}</td>
+                <td>${imageCount}</td>
                 <td class="actions-cell has-text-right">
                     <button class="button is-small is-link edit-group-images-button" 
                             data-group-id="${group.id}" 
@@ -350,6 +384,8 @@ async function handleUploadFormSubmit(e) {
     e.preventDefault();
     
     const formData = new FormData(e.target);
+    const mediaType = formData.get('type');
+    const sectionKey = formData.get('section_key');
     const progressContainer = document.getElementById('upload-progress-container');
     const progressBar = document.getElementById('upload-progress-bar');
     const progressText = document.getElementById('upload-progress-text');
@@ -357,22 +393,73 @@ async function handleUploadFormSubmit(e) {
     progressContainer.style.display = 'block';
     
     try {
-        await uploadMediaWithProgress(formData, (progress) => {
-            progressBar.value = progress;
-            progressText.textContent = `${Math.round(progress)}%`;
-        });
+        if (mediaType === 'group_reference') {
+            // 處理群組指派
+            const groupId = formData.get('carousel_group_id');
+            if (!groupId) {
+                throw new Error('請選擇輪播組');
+            }
+            
+            const assignmentFormData = new FormData();
+            assignmentFormData.append('section_key', sectionKey);
+            assignmentFormData.append('content_type', 'group_reference');
+            assignmentFormData.append('content_id', groupId);
+            
+            const response = await fetch('/ws/api/assignments', {
+                method: 'POST',
+                body: assignmentFormData
+            });
+            
+            if (!response.ok) {
+                throw new Error(`群組指派API請求失敗: ${response.status}`);
+            }
+            
+            alert('群組指派成功！');
+        } else {
+            // 處理檔案上傳
+            const fileFormData = new FormData();
+            fileFormData.append('file', formData.get('file'));
+            
+            const uploadResult = await uploadMediaWithProgress(fileFormData, (progress) => {
+                progressBar.value = progress;
+                progressText.textContent = `${Math.round(progress)}%`;
+            });
+            
+            console.log('上傳結果:', uploadResult);
+            
+            // 上傳成功後自動指派
+            if (uploadResult.success && uploadResult.material && sectionKey) {
+                const assignmentFormData = new FormData();
+                assignmentFormData.append('section_key', sectionKey);
+                assignmentFormData.append('content_type', 'single_media');
+                assignmentFormData.append('content_id', uploadResult.material.id);
+                
+                const assignResponse = await fetch('/ws/api/assignments', {
+                    method: 'POST',
+                    body: assignmentFormData
+                });
+                
+                if (assignResponse.ok) {
+                    alert('上傳並指派成功！');
+                } else {
+                    alert('上傳成功，但指派失敗。請手動重新指派。');
+                }
+            } else {
+                alert('上傳成功！');
+            }
+        }
         
-        alert('上傳成功！');
         e.target.reset();
-        document.querySelector('.file-name').textContent = '未選擇任何檔案';
+        const fileName = document.querySelector('.file-name');
+        if (fileName) fileName.textContent = '未選擇任何檔案';
         
         // 重新載入數據
         const data = await getInitialData();
         setState(data);
         
     } catch (error) {
-        console.error('上傳失敗:', error);
-        alert('上傳失敗: ' + error.message);
+        console.error('操作失敗:', error);
+        alert('操作失敗: ' + error.message);
     } finally {
         progressContainer.style.display = 'none';
         progressBar.value = 0;
@@ -386,20 +473,30 @@ async function handleCreateGroupSubmit(e) {
     const formData = new FormData(e.target);
     const groupName = formData.get('group_name');
     
+    if (!groupName || !groupName.trim()) {
+        alert('請輸入群組名稱');
+        return;
+    }
+    
     try {
-        // 暫時模擬群組創建
-        const newGroup = {
-            id: `group_${Date.now()}`,
-            name: groupName,
-            image_count: 0
-        };
-        
-        setState({
-            groups: [...appState.groups, newGroup]
+        const response = await fetch('/ws/api/groups', {
+            method: 'POST',
+            body: formData
         });
+        
+        if (!response.ok) {
+            throw new Error(`建立群組API請求失敗: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('群組建立成功:', result);
         
         alert('群組建立成功！');
         e.target.reset();
+        
+        // 重新載入數據
+        const data = await getInitialData();
+        setState(data);
         
     } catch (error) {
         console.error('建立群組失敗:', error);
@@ -421,7 +518,22 @@ async function handleSettingsSubmit(e) {
     };
     
     try {
-        // 暫時本地儲存設定
+        const response = await fetch('/ws/api/settings', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(settings)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`設定API請求失敗: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('設定儲存成功:', result);
+        
+        // 更新本地狀態
         setState({ settings });
         alert('設定已儲存！');
         
@@ -576,9 +688,36 @@ async function handleConfirmReassign() {
     }
     
     try {
-        // 暫時模擬指派功能
-        console.log('重新指派媒體:', mediaId, 'to', sectionKey);
-        alert('重新指派成功！');
+        // 先刪除舊的指派（如果存在）
+        const existingAssignment = appState.assignments.find(a => a.content_id === mediaId && a.content_type === 'single_media');
+        if (existingAssignment) {
+            const deleteResponse = await fetch(`/ws/api/assignments/${existingAssignment.id}`, {
+                method: 'DELETE'
+            });
+            if (!deleteResponse.ok) {
+                console.warn('刪除舊指派失敗，繼續建立新指派');
+            }
+        }
+        
+        // 建立新的指派
+        const formData = new FormData();
+        formData.append('section_key', sectionKey);
+        formData.append('content_type', 'single_media');
+        formData.append('content_id', mediaId);
+        
+        const response = await fetch('/ws/api/assignments', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error(`指派API請求失敗: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('指派成功:', result);
+        
+        alert('指派成功！');
         closeAllModals();
         
         // 重新載入數據
@@ -586,8 +725,8 @@ async function handleConfirmReassign() {
         setState(data);
         
     } catch (error) {
-        console.error('重新指派失敗:', error);
-        alert('重新指派失敗: ' + error.message);
+        console.error('指派失敗:', error);
+        alert('指派失敗: ' + error.message);
     }
 }
 
@@ -615,12 +754,21 @@ async function handleDeleteItem(button) {
             } else {
                 throw new Error('刪除失敗');
             }
-        } else {
+        } else if (itemType === 'carousel_group') {
             // 處理群組刪除
-            setState({
-                groups: appState.groups.filter(group => group.id !== itemId)
+            const response = await fetch(`/ws/api/groups/${itemId}`, {
+                method: 'DELETE'
             });
-            alert('刪除成功！');
+            
+            if (response.ok) {
+                alert('刪除成功！');
+                
+                // 重新載入數據
+                const data = await getInitialData();
+                setState(data);
+            } else {
+                throw new Error('刪除失敗');
+            }
         }
         
     } catch (error) {
