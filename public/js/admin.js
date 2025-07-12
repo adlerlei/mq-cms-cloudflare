@@ -1039,7 +1039,13 @@ async function handleDeleteItem(button) {
     const itemType = button.dataset.itemType;
     const filename = button.dataset.filename;
     
-    if (!confirm('確定要刪除此項目嗎？此操作無法復原。')) {
+    // 根據項目類型顯示不同的確認訊息
+    let confirmMessage = '確定要刪除此項目嗎？此操作無法復原。';
+    if (itemType === 'carousel_group') {
+        confirmMessage = '確定要刪除此輪播群組嗎？\n⚠️ 警告：這將會同時刪除群組內的所有圖片檔案！\n此操作無法復原。';
+    }
+    
+    if (!confirm(confirmMessage)) {
         return;
     }
     
@@ -1059,13 +1065,13 @@ async function handleDeleteItem(button) {
                 throw new Error('刪除失敗');
             }
         } else if (itemType === 'carousel_group') {
-            // 處理群組刪除
+            // 處理群組刪除 - 會同時刪除群組內的所有圖片
             const response = await fetch(`/ws/api/groups/${itemId}`, {
                 method: 'DELETE'
             });
             
             if (response.ok) {
-                alert('刪除成功！');
+                alert('群組及其內部所有圖片已刪除成功！');
                 
                 // 重新載入數據
                 const data = await getInitialData();

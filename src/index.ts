@@ -212,6 +212,18 @@ export class MessageBroadcaster {
 					});
 				}
 				
+				// 獲取群組信息以取得群組內的材料
+				const groups = await this.getGroups();
+				const targetGroup = groups.find(g => g.id === groupId);
+				
+				if (targetGroup && targetGroup.materials) {
+					// 刪除群組內的所有材料
+					for (const material of targetGroup.materials) {
+						await this.deleteMaterial(material.id);
+					}
+				}
+				
+				// 刪除群組本身
 				await this.deleteGroup(groupId);
 				
 				// 通知所有客戶端群組已更新
@@ -789,6 +801,60 @@ export default {
 				});
 			} catch (error: any) {
 				return new Response(JSON.stringify({ error: 'Delete failed', details: error?.message || 'Unknown error' }), {
+					status: 500,
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+				});
+			}
+		}
+
+		// 處理群組刪除請求 - 需要同時刪除 R2 中的檔案
+		if (url.pathname.startsWith('/ws/api/groups/') && request.method === 'DELETE') {
+			try {
+				const groupId = url.pathname.replace('/ws/api/groups/', '');
+				if (!groupId) {
+					return new Response(JSON.stringify({ error: 'Group ID is required' }), {
+						status: 400,
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				}
+				
+				// 先從 Durable Object 獲取群組信息
+				const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
+				const stub = env.MESSAGE_BROADCASTER.get(id);
+				
+				const groupsResponse = await stub.fetch(new Request('http://localhost/api/groups'));
+				const groups = await groupsResponse.json();
+				const targetGroup = groups.find((g: any) => g.id === groupId);
+				
+				if (targetGroup && targetGroup.materials) {
+					// 從 R2 中刪除群組內的所有檔案
+					for (const material of targetGroup.materials) {
+						try {
+							await env.MEDIA_BUCKET.delete(material.filename);
+							console.log(`已從 R2 刪除檔案: ${material.filename}`);
+						} catch (error) {
+							console.warn(`刪除 R2 檔案失敗: ${material.filename}`, error);
+						}
+					}
+				}
+				
+				// 轉發刪除請求給 Durable Object
+				const newUrl = new URL(request.url);
+				newUrl.pathname = url.pathname.replace('/ws', '');
+				const newRequest = new Request(newUrl.toString(), {
+					method: request.method,
+					headers: request.headers,
+					body: request.body
+				});
+				
+				return stub.fetch(newRequest);
+				
+			} catch (error: any) {
+				console.error('Error deleting group with files:', error);
+				return new Response(JSON.stringify({ 
+					error: 'Failed to delete group with files', 
+					details: error.message 
+				}), {
 					status: 500,
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 				});
