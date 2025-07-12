@@ -1203,11 +1203,15 @@ function initializeWebSocket() {
 // 拖拽排序功能
 function setupDragAndDrop() {
     let draggedItem = null;
+    let draggedFromContainer = null;
     
     document.body.addEventListener('dragstart', (e) => {
         if (e.target.classList.contains('image-list-item')) {
             draggedItem = e.target;
+            draggedFromContainer = e.target.parentElement;
             e.target.style.opacity = '0.5';
+            e.dataTransfer.effectAllowed = 'move';
+            console.log('開始拖拽:', e.target.dataset.imageId);
         }
     });
     
@@ -1215,25 +1219,62 @@ function setupDragAndDrop() {
         if (e.target.classList.contains('image-list-item')) {
             e.target.style.opacity = '';
             draggedItem = null;
+            draggedFromContainer = null;
+            console.log('拖拽結束');
         }
     });
     
     document.body.addEventListener('dragover', (e) => {
         e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        
         const selectedList = document.getElementById('selectedImagesList');
-        if (selectedList && selectedList.contains(e.target.closest('.image-list-item'))) {
+        if (!selectedList || !draggedItem) return;
+        
+        // 只允許在已選圖片列表內拖拽排序
+        if (selectedList.contains(e.target) || e.target === selectedList) {
             const afterElement = getDragAfterElement(selectedList, e.clientY);
+            
             if (afterElement == null) {
-                selectedList.appendChild(draggedItem);
+                // 移動到列表末尾
+                if (selectedList.lastElementChild !== draggedItem) {
+                    selectedList.appendChild(draggedItem);
+                }
             } else {
-                selectedList.insertBefore(draggedItem, afterElement);
+                // 移動到指定位置
+                if (afterElement !== draggedItem.nextSibling) {
+                    selectedList.insertBefore(draggedItem, afterElement);
+                }
             }
         }
     });
     
     document.body.addEventListener('drop', (e) => {
         e.preventDefault();
+        if (draggedItem) {
+            console.log('拖拽完成，新順序已更新');
+            // 可以在這裡添加自動保存邏輯
+        }
     });
+    
+    // 為已選圖片列表添加拖拽區域樣式
+    const selectedList = document.getElementById('selectedImagesList');
+    if (selectedList) {
+        selectedList.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            selectedList.classList.add('drag-over');
+        });
+        
+        selectedList.addEventListener('dragleave', (e) => {
+            if (!selectedList.contains(e.relatedTarget)) {
+                selectedList.classList.remove('drag-over');
+            }
+        });
+        
+        selectedList.addEventListener('drop', (e) => {
+            selectedList.classList.remove('drag-over');
+        });
+    }
 }
 
 function getDragAfterElement(container, y) {
