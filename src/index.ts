@@ -82,25 +82,77 @@ export class MessageBroadcaster {
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 				});
 			} else if (request.method === 'POST') {
-				const formData = await request.formData();
-				const assignment: Assignment = {
-					id: generateId(),
-					section_key: formData.get('section_key') as string,
-					content_type: formData.get('content_type') as 'single_media' | 'group_reference',
-					content_id: formData.get('content_id') as string,
-					created_at: new Date().toISOString()
-				};
-				await this.saveAssignment(assignment);
-				return new Response(JSON.stringify({ success: true, assignment }), {
+				try {
+					const formData = await request.formData();
+					const sectionKey = formData.get('section_key') as string;
+					const contentType = formData.get('content_type') as 'single_media' | 'group_reference';
+					const contentId = formData.get('content_id') as string;
+					
+					if (!sectionKey || !contentType || !contentId) {
+						return new Response(JSON.stringify({ 
+							error: 'Missing required fields', 
+							details: { sectionKey, contentType, contentId } 
+						}), {
+							status: 400,
+							headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+						});
+					}
+					
+					const assignment: Assignment = {
+						id: generateId(),
+						section_key: sectionKey,
+						content_type: contentType,
+						content_id: contentId,
+						created_at: new Date().toISOString()
+					};
+					
+					await this.saveAssignment(assignment);
+					
+					// 通知所有客戶端播放列表已更新
+					this.broadcast(JSON.stringify({ type: 'playlist_updated' }));
+					
+					return new Response(JSON.stringify({ success: true, assignment }), {
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				} catch (error: any) {
+					console.error('Error creating assignment:', error);
+					return new Response(JSON.stringify({ 
+						error: 'Failed to create assignment', 
+						details: error.message 
+					}), {
+						status: 500,
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				}
+			}
+		} else if (url.pathname.startsWith('/api/assignments/') && request.method === 'DELETE') {
+			try {
+				const assignmentId = url.pathname.replace('/api/assignments/', '');
+				if (!assignmentId) {
+					return new Response(JSON.stringify({ error: 'Assignment ID is required' }), {
+						status: 400,
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				}
+				
+				await this.deleteAssignment(assignmentId);
+				
+				// 通知所有客戶端播放列表已更新
+				this.broadcast(JSON.stringify({ type: 'playlist_updated' }));
+				
+				return new Response(JSON.stringify({ success: true }), {
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+				});
+			} catch (error: any) {
+				console.error('Error deleting assignment:', error);
+				return new Response(JSON.stringify({ 
+					error: 'Failed to delete assignment', 
+					details: error.message 
+				}), {
+					status: 500,
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 				});
 			}
-		} else if (url.pathname.startsWith('/api/assignments/') && request.method === 'DELETE') {
-			const assignmentId = url.pathname.replace('/api/assignments/', '');
-			await this.deleteAssignment(assignmentId);
-			return new Response(JSON.stringify({ success: true }), {
-				headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-			});
 		}
 
 		// 處理群組相關API
@@ -111,24 +163,73 @@ export class MessageBroadcaster {
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 				});
 			} else if (request.method === 'POST') {
-				const formData = await request.formData();
-				const group: CarouselGroup = {
-					id: generateId(),
-					name: formData.get('group_name') as string,
-					materials: [],
-					created_at: new Date().toISOString()
-				};
-				await this.saveGroup(group);
-				return new Response(JSON.stringify({ success: true, group }), {
+				try {
+					const formData = await request.formData();
+					const groupName = formData.get('group_name') as string;
+					
+					if (!groupName || !groupName.trim()) {
+						return new Response(JSON.stringify({ 
+							error: 'Group name is required' 
+						}), {
+							status: 400,
+							headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+						});
+					}
+					
+					const group: CarouselGroup = {
+						id: generateId(),
+						name: groupName.trim(),
+						materials: [],
+						created_at: new Date().toISOString()
+					};
+					
+					await this.saveGroup(group);
+					
+					// 通知所有客戶端群組已更新
+					this.broadcast(JSON.stringify({ type: 'groups_updated' }));
+					
+					return new Response(JSON.stringify({ success: true, group }), {
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				} catch (error: any) {
+					console.error('Error creating group:', error);
+					return new Response(JSON.stringify({ 
+						error: 'Failed to create group', 
+						details: error.message 
+					}), {
+						status: 500,
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				}
+			}
+		} else if (url.pathname.startsWith('/api/groups/') && request.method === 'DELETE') {
+			try {
+				const groupId = url.pathname.replace('/api/groups/', '');
+				if (!groupId) {
+					return new Response(JSON.stringify({ error: 'Group ID is required' }), {
+						status: 400,
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				}
+				
+				await this.deleteGroup(groupId);
+				
+				// 通知所有客戶端群組已更新
+				this.broadcast(JSON.stringify({ type: 'groups_updated' }));
+				
+				return new Response(JSON.stringify({ success: true }), {
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+				});
+			} catch (error: any) {
+				console.error('Error deleting group:', error);
+				return new Response(JSON.stringify({ 
+					error: 'Failed to delete group', 
+					details: error.message 
+				}), {
+					status: 500,
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 				});
 			}
-		} else if (url.pathname.startsWith('/api/groups/') && request.method === 'DELETE') {
-			const groupId = url.pathname.replace('/api/groups/', '');
-			await this.deleteGroup(groupId);
-			return new Response(JSON.stringify({ success: true }), {
-				headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-			});
 		} else if (url.pathname.match(/\/api\/groups\/[^\/]+\/images$/) && request.method === 'PUT') {
 			const groupId = url.pathname.split('/')[3];
 			const requestData = await request.json() as { image_ids: string[] };
@@ -596,11 +697,25 @@ export default {
 
 		// 將 WebSocket 和其他 API 請求轉發給 Durable Object
 		if (url.pathname === '/ws' || 
+			url.pathname.startsWith('/ws/api/') ||
 			(url.pathname.startsWith('/api/') && 
 			 !url.pathname.startsWith('/api/media') && 
 			 url.pathname !== '/api/media_with_settings')) {
 			const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
 			const stub = env.MESSAGE_BROADCASTER.get(id);
+			
+			// 對於 /ws/api/ 路徑，需要重寫 URL 去掉 /ws 前綴
+			if (url.pathname.startsWith('/ws/api/')) {
+				const newUrl = new URL(request.url);
+				newUrl.pathname = url.pathname.replace('/ws', '');
+				const newRequest = new Request(newUrl.toString(), {
+					method: request.method,
+					headers: request.headers,
+					body: request.body
+				});
+				return stub.fetch(newRequest);
+			}
+			
 			return stub.fetch(request);
 		}
 
