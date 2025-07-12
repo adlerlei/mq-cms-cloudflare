@@ -808,6 +808,7 @@ function createDraggableImageItem(material, isAvailable, usage) {
     const item = document.createElement('div');
     item.className = 'image-list-item';
     item.dataset.imageId = material.id;
+    item.dataset.filename = material.filename;
     item.draggable = true;
 
     let tags = '';
@@ -822,7 +823,7 @@ function createDraggableImageItem(material, isAvailable, usage) {
             <div class="tags">${tags}</div>
         </div>
         <button class="button is-small is-danger toggle-button" data-image-id="${material.id}">
-            <i class="fas fa-trash"></i>
+            刪除
         </button>
     `;
     
@@ -926,18 +927,50 @@ async function handleGroupImageUpload() {
     }
 }
 
-function handleImageToggle(button) {
+async function handleImageToggle(button) {
     const item = button.closest('.image-list-item');
     const selectedList = document.getElementById('selectedImagesList');
+    const imageId = button.dataset.imageId;
+    const filename = item.dataset.filename;
     
-    // 只允許從已選列表中移除圖片
+    // 只允許從已選列表中刪除圖片
     if (selectedList && selectedList.contains(item)) {
-        if (confirm('確定要從此群組中移除這張圖片嗎？')) {
-            item.remove();
-            
-            // 如果已選列表為空，顯示佔位符
-            if (selectedList.querySelectorAll('.image-list-item').length === 0) {
-                selectedList.innerHTML = '<p class="has-text-grey-light has-text-centered p-4">此群組尚無圖片</p>';
+        if (confirm(`確定要永久刪除這張圖片嗎？\n檔案名稱：${filename}\n⚠️ 警告：此操作會從系統中完全刪除此圖片，無法復原！`)) {
+            try {
+                // 先從UI中移除
+                item.remove();
+                
+                // 從後端完全刪除這張圖片
+                const response = await fetch(`/api/media/${imageId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('刪除圖片失敗');
+                }
+                
+                // 如果已選列表為空，顯示佔位符
+                if (selectedList.querySelectorAll('.image-list-item').length === 0) {
+                    selectedList.innerHTML = '<p class="has-text-grey-light has-text-centered p-4">此群組尚無圖片</p>';
+                }
+                
+                // 重新載入數據以確保同步
+                const data = await getInitialData();
+                setState(data);
+                
+                console.log(`圖片 ${filename} 已從系統中完全刪除`);
+                
+            } catch (error) {
+                console.error('刪除圖片失敗:', error);
+                alert('刪除圖片失敗: ' + error.message);
+                
+                // 如果刪除失敗，重新載入數據恢復UI狀態
+                const data = await getInitialData();
+                setState(data);
+                loadGroupImages(document.getElementById('modalGroupId').value);
             }
         }
     }
