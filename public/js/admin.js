@@ -184,7 +184,8 @@ function renderMediaAndAssignments() {
             
             if (assignment) {
                 const sectionName = appState.available_sections[assignment.section_key] || assignment.section_key;
-                statusText = `已指派到: ${sectionName}`;
+                const offsetText = assignment.offset && assignment.offset > 0 ? ` (偏移: ${assignment.offset})` : '';
+                statusText = `已指派到: ${sectionName}${offsetText}`;
                 statusClass = 'tag is-success is-light';
             }
             
@@ -207,7 +208,8 @@ function renderMediaAndAssignments() {
         
         if (assignment) {
             const sectionName = appState.available_sections[assignment.section_key] || assignment.section_key;
-            statusText = `已指派到: ${sectionName}`;
+            const offsetText = assignment.offset && assignment.offset > 0 ? ` (偏移: ${assignment.offset})` : '';
+            statusText = `已指派到: ${sectionName}${offsetText}`;
             statusClass = 'tag is-success is-light';
         }
         
@@ -468,6 +470,8 @@ async function handleUploadFormSubmit(e) {
         if (mediaType === 'group_reference') {
             // 處理群組指派
             const groupId = formData.get('carousel_group_id');
+            const offset = formData.get('offset');
+            
             if (!groupId) {
                 throw new Error('請選擇輪播組');
             }
@@ -476,6 +480,9 @@ async function handleUploadFormSubmit(e) {
             assignmentFormData.append('section_key', sectionKey);
             assignmentFormData.append('content_type', 'group_reference');
             assignmentFormData.append('content_id', groupId);
+            if (offset !== null && offset !== '') {
+                assignmentFormData.append('offset', offset);
+            }
             
             const response = await fetch('/ws/api/assignments', {
                 method: 'POST',
@@ -486,7 +493,8 @@ async function handleUploadFormSubmit(e) {
                 throw new Error(`群組指派API請求失敗: ${response.status}`);
             }
             
-            alert('群組指派成功！');
+            const offsetText = offset && parseInt(offset) > 0 ? ` (偏移量: ${offset})` : '';
+            alert(`群組指派成功！${offsetText}`);
         } else {
             // 處理檔案上傳
             const fileFormData = new FormData();

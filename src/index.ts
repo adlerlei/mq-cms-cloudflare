@@ -16,6 +16,7 @@ interface Assignment {
 	section_key: string;
 	content_type: 'single_media' | 'group_reference';
 	content_id: string;
+	offset?: number;
 	created_at: string;
 }
 
@@ -87,6 +88,7 @@ export class MessageBroadcaster {
 					const sectionKey = formData.get('section_key') as string;
 					const contentType = formData.get('content_type') as 'single_media' | 'group_reference';
 					const contentId = formData.get('content_id') as string;
+					const offsetStr = formData.get('offset') as string;
 					
 					if (!sectionKey || !contentType || !contentId) {
 						return new Response(JSON.stringify({ 
@@ -103,6 +105,7 @@ export class MessageBroadcaster {
 						section_key: sectionKey,
 						content_type: contentType,
 						content_id: contentId,
+						offset: offsetStr ? parseInt(offsetStr, 10) : undefined,
 						created_at: new Date().toISOString()
 					};
 					
