@@ -5,6 +5,7 @@
 .vscode/
 Thumbs.db
 
+
 # Node / Javascript
 node_modules/
 npm-debug.log*

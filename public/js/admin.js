@@ -167,18 +167,40 @@ function renderMediaAndAssignments() {
     const tbody = document.getElementById('mediaTableBody');
     if (!tbody) return;
     
-    if (appState.media.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="has-text-centered">目前媒體庫為空。</td></tr>';
-        return;
-    }
+    // 創建一個包含所有項目的數組：單獨的媒體 + 群組
+    const allItems = [];
     
-    let html = '';
+    // 添加單獨的媒體（不在任何群組中的）
     appState.media.forEach(item => {
-        // 檢查這個媒體是否已被指派
-        const assignment = appState.assignments.find(a => a.content_id === item.id && a.content_type === 'single_media');
         const isInGroup = appState.groups.some(group => 
             group.materials && group.materials.some(material => material.id === item.id)
         );
+        
+        if (!isInGroup) {
+            const assignment = appState.assignments.find(a => a.content_id === item.id && a.content_type === 'single_media');
+            
+            let statusText = '在庫，未指派';
+            let statusClass = 'is-italic';
+            
+            if (assignment) {
+                const sectionName = appState.available_sections[assignment.section_key] || assignment.section_key;
+                statusText = `已指派到: ${sectionName}`;
+                statusClass = 'tag is-success is-light';
+            }
+            
+            allItems.push({
+                type: 'media',
+                item: item,
+                statusText: statusText,
+                statusClass: statusClass
+            });
+        }
+    });
+    
+    // 添加群組
+    appState.groups.forEach(group => {
+        const assignment = appState.assignments.find(a => a.content_id === group.id && a.content_type === 'group_reference');
+        const imageCount = group.materials ? group.materials.length : 0;
         
         let statusText = '在庫，未指派';
         let statusClass = 'is-italic';
@@ -187,37 +209,68 @@ function renderMediaAndAssignments() {
             const sectionName = appState.available_sections[assignment.section_key] || assignment.section_key;
             statusText = `已指派到: ${sectionName}`;
             statusClass = 'tag is-success is-light';
-        } else if (isInGroup) {
-            const group = appState.groups.find(group => 
-                group.materials && group.materials.some(material => material.id === item.id)
-            );
-            statusText = `在輪播組: ${group ? group.name : '未知組'}`;
-            statusClass = 'tag is-info is-light';
         }
         
-        html += `
-            <tr>
-                <td>
-                    ${item.type === 'image' ? 
-                        `<img src="${item.url}" class="image-thumbnail">` : 
-                        '<i class="fas fa-film fa-2x"></i>'
-                    }
-                    <span>${item.filename || item.name}</span>
-                </td>
-                <td><span class="tag is-info is-light">${item.type === 'image' ? '圖片素材' : '影片素材'}</span></td>
-                <td><span class="${statusClass}">${statusText}</span></td>
-                <td class="actions-cell has-text-right">
-                    <button class="button is-small is-info reassign-media-button" 
-                            data-media-id="${item.id}"
-                            data-media-type="${item.type}"
-                            data-media-filename="${item.filename || item.name}">重新指派</button>
-                    <button class="button is-small is-warning delete-media-button" 
-                            data-item-id="${item.id}" 
-                            data-item-type="material"
-                            data-filename="${item.filename}">刪除素材</button>
-                </td>
-            </tr>
-        `;
+        allItems.push({
+            type: 'group',
+            item: group,
+            imageCount: imageCount,
+            statusText: statusText,
+            statusClass: statusClass
+        });
+    });
+    
+    if (allItems.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="has-text-centered">目前媒體庫為空。</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    allItems.forEach(({ type, item, imageCount, statusText, statusClass }) => {
+        if (type === 'media') {
+            html += `
+                <tr>
+                    <td>
+                        ${item.type === 'image' ? 
+                            `<img src="${item.url}" class="image-thumbnail">` : 
+                            '<i class="fas fa-film fa-2x"></i>'
+                        }
+                        <span>${item.filename || item.name}</span>
+                    </td>
+                    <td><span class="tag is-info is-light">${item.type === 'image' ? '圖片素材' : '影片素材'}</span></td>
+                    <td><span class="${statusClass}">${statusText}</span></td>
+                    <td class="actions-cell has-text-right">
+                        <button class="button is-small is-info reassign-media-button" 
+                                data-media-id="${item.id}"
+                                data-media-type="${item.type}"
+                                data-media-filename="${item.filename || item.name}">重新指派</button>
+                        <button class="button is-small is-warning delete-media-button" 
+                                data-item-id="${item.id}" 
+                                data-item-type="material"
+                                data-filename="${item.filename}">刪除素材</button>
+                    </td>
+                </tr>
+            `;
+        } else if (type === 'group') {
+            html += `
+                <tr>
+                    <td>
+                        <i class="fas fa-images fa-2x"></i>
+                        <span>${item.name} (${imageCount})</span>
+                    </td>
+                    <td><span class="tag is-primary is-light">輪播群組</span></td>
+                    <td><span class="${statusClass}">${statusText}</span></td>
+                    <td class="actions-cell has-text-right">
+                        <button class="button is-small is-info reassign-group-button" 
+                                data-group-id="${item.id}"
+                                data-group-name="${item.name}">重新指派</button>
+                        <button class="button is-small is-warning delete-group-button" 
+                                data-item-id="${item.id}" 
+                                data-item-type="carousel_group">刪除群組</button>
+                    </td>
+                </tr>
+            `;
+        }
     });
     
     tbody.innerHTML = html;
@@ -609,6 +662,11 @@ function handleDynamicClicks(e) {
         openReassignMediaModal(e.target);
     }
     
+    // 重新指派群組按鈕
+    if (e.target.matches('.reassign-group-button')) {
+        openReassignGroupModal(e.target);
+    }
+    
     // 刪除按鈕
     if (e.target.matches('.delete-media-button, .delete-group-button')) {
         handleDeleteItem(e.target);
@@ -650,6 +708,38 @@ function openReassignMediaModal(button) {
         // 填充區塊選項
         sectionSelect.innerHTML = '<option value="" disabled selected>-- 請選擇區塊 --</option>';
         Object.entries(appState.available_sections).forEach(([key, name]) => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = name;
+            sectionSelect.appendChild(option);
+        });
+        
+        modal.classList.add('is-active');
+    }
+}
+
+function openReassignGroupModal(button) {
+    const modal = document.getElementById('reassignMediaModal');
+    const filenameSpan = document.getElementById('reassignMediaFilename');
+    const mediaIdInput = document.getElementById('reassignMediaId');
+    const mediaTypeInput = document.getElementById('reassignMediaType');
+    const sectionSelect = document.getElementById('reassignSectionSelect');
+    
+    if (modal && filenameSpan && mediaIdInput && mediaTypeInput && sectionSelect) {
+        filenameSpan.textContent = `群組: ${button.dataset.groupName}`;
+        mediaIdInput.value = button.dataset.groupId;
+        mediaTypeInput.value = 'group_reference';
+        
+        // 填充輪播區塊選項（群組只能指派到輪播區塊）
+        sectionSelect.innerHTML = '<option value="" disabled selected>-- 請選擇輪播區塊 --</option>';
+        const carouselSections = {
+            'carousel_top_left': '左上輪播',
+            'carousel_top_right': '右上輪播',
+            'carousel_bottom_left': '左下輪播',
+            'carousel_bottom_right': '右下輪播'
+        };
+        
+        Object.entries(carouselSections).forEach(([key, name]) => {
             const option = document.createElement('option');
             option.value = key;
             option.textContent = name;
@@ -839,15 +929,14 @@ async function handleGroupImageUpload() {
 function handleImageToggle(button) {
     const item = button.closest('.image-list-item');
     const selectedList = document.getElementById('selectedImagesList');
-    const icon = button.querySelector('i');
     
     // 只允許從已選列表中移除圖片
-    if (selectedList.contains(item)) {
+    if (selectedList && selectedList.contains(item)) {
         if (confirm('確定要從此群組中移除這張圖片嗎？')) {
             item.remove();
             
             // 如果已選列表為空，顯示佔位符
-            if (selectedList.children.length === 0) {
+            if (selectedList.querySelectorAll('.image-list-item').length === 0) {
                 selectedList.innerHTML = '<p class="has-text-grey-light has-text-centered p-4">此群組尚無圖片</p>';
             }
         }
@@ -893,6 +982,7 @@ async function handleSaveGroupChanges(button) {
 
 async function handleConfirmReassign() {
     const mediaId = document.getElementById('reassignMediaId').value;
+    const mediaType = document.getElementById('reassignMediaType').value;
     const sectionKey = document.getElementById('reassignSectionSelect').value;
     
     if (!sectionKey) {
@@ -902,7 +992,8 @@ async function handleConfirmReassign() {
     
     try {
         // 先刪除舊的指派（如果存在）
-        const existingAssignment = appState.assignments.find(a => a.content_id === mediaId && a.content_type === 'single_media');
+        const contentType = mediaType === 'group_reference' ? 'group_reference' : 'single_media';
+        const existingAssignment = appState.assignments.find(a => a.content_id === mediaId && a.content_type === contentType);
         if (existingAssignment) {
             const deleteResponse = await fetch(`/ws/api/assignments/${existingAssignment.id}`, {
                 method: 'DELETE'
@@ -915,7 +1006,7 @@ async function handleConfirmReassign() {
         // 建立新的指派
         const formData = new FormData();
         formData.append('section_key', sectionKey);
-        formData.append('content_type', 'single_media');
+        formData.append('content_type', contentType);
         formData.append('content_id', mediaId);
         
         const response = await fetch('/ws/api/assignments', {
