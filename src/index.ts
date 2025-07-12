@@ -249,6 +249,106 @@ export class MessageBroadcaster {
 				headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 			});
 		}
+		
+		// 處理群組材料相關API
+		else if (url.pathname.match(/\/api\/groups\/[^\/]+\/materials$/) && request.method === 'POST') {
+			try {
+				const groupId = url.pathname.split('/')[3];
+				const formData = await request.formData();
+				const action = formData.get('action') as string;
+				
+				if (action === 'add_materials') {
+					const materialIds = formData.getAll('material_ids[]') as string[];
+					const groups = await this.getGroups();
+					const materials = await this.getMaterials();
+					
+					const group = groups.find(g => g.id === groupId);
+					if (!group) {
+						return new Response(JSON.stringify({ error: 'Group not found' }), {
+							status: 404,
+							headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+						});
+					}
+					
+					// 添加新材料到群組
+					const newMaterials = materialIds.map(id => 
+						materials.find(m => m.id === id)
+					).filter(Boolean) as MediaMaterial[];
+					
+					group.materials = [...(group.materials || []), ...newMaterials];
+					await this.updateGroup(groupId, group);
+					
+					// 通知所有客戶端群組已更新
+					this.broadcast(JSON.stringify({ type: 'groups_updated' }));
+					
+					return new Response(JSON.stringify({ success: true, group }), {
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				}
+				
+				return new Response(JSON.stringify({ error: 'Invalid action' }), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+				});
+			} catch (error: any) {
+				console.error('Error adding materials to group:', error);
+				return new Response(JSON.stringify({ 
+					error: 'Failed to add materials to group', 
+					details: error.message 
+				}), {
+					status: 500,
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+				});
+			}
+		} else if (url.pathname.match(/\/api\/groups\/[^\/]+\/materials$/) && request.method === 'PUT') {
+			try {
+				const groupId = url.pathname.split('/')[3];
+				const formData = await request.formData();
+				const action = formData.get('action') as string;
+				
+				if (action === 'update_materials') {
+					const materialIds = formData.getAll('material_ids[]') as string[];
+					const groups = await this.getGroups();
+					const materials = await this.getMaterials();
+					
+					const group = groups.find(g => g.id === groupId);
+					if (!group) {
+						return new Response(JSON.stringify({ error: 'Group not found' }), {
+							status: 404,
+							headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+						});
+					}
+					
+					// 更新群組材料
+					group.materials = materialIds.map(id => 
+						materials.find(m => m.id === id)
+					).filter(Boolean) as MediaMaterial[];
+					
+					await this.updateGroup(groupId, group);
+					
+					// 通知所有客戶端群組已更新
+					this.broadcast(JSON.stringify({ type: 'groups_updated' }));
+					
+					return new Response(JSON.stringify({ success: true, group }), {
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				}
+				
+				return new Response(JSON.stringify({ error: 'Invalid action' }), {
+					status: 400,
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+				});
+			} catch (error: any) {
+				console.error('Error updating group materials:', error);
+				return new Response(JSON.stringify({ 
+					error: 'Failed to update group materials', 
+					details: error.message 
+				}), {
+					status: 500,
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+				});
+			}
+		}
 
 		// 處理 CORS 預檢請求
 		else if (request.method === 'OPTIONS') {

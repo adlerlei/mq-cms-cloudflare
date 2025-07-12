@@ -239,7 +239,7 @@ function renderCarouselGroups() {
         
         html += `
             <tr>
-                <td>${group.name}</td>
+                <td>${group.name} (${imageCount})</td>
                 <td>${imageCount}</td>
                 <td class="actions-cell has-text-right">
                     <button class="button is-small is-link edit-group-images-button" 
@@ -307,6 +307,25 @@ function setupEventHandlers() {
                 fileName.textContent = '未選擇任何檔案';
             }
         });
+    }
+    
+    // 群組圖片上傳事件
+    const groupImageUploadInput = document.getElementById('groupImageUpload');
+    const groupUploadFileName = document.getElementById('groupUploadFileName');
+    const uploadToGroupButton = document.getElementById('uploadToGroupButton');
+    
+    if (groupImageUploadInput && groupUploadFileName && uploadToGroupButton) {
+        groupImageUploadInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                groupUploadFileName.textContent = `${e.target.files.length} 個檔案已選擇`;
+                uploadToGroupButton.disabled = false;
+            } else {
+                groupUploadFileName.textContent = '未選擇任何檔案';
+                uploadToGroupButton.disabled = true;
+            }
+        });
+        
+        uploadToGroupButton.addEventListener('click', handleGroupImageUpload);
     }
     
     // 媒體類型選擇事件
@@ -600,6 +619,16 @@ function handleDynamicClicks(e) {
         openGroupEditModal(e.target);
     }
     
+    // 群組內圖片切換按鈕
+    if (e.target.matches('.toggle-button')) {
+        handleImageToggle(e.target);
+    }
+    
+    // 儲存群組變更按鈕
+    if (e.target.matches('#saveGroupChangesButton')) {
+        handleSaveGroupChanges(e.target);
+    }
+    
     // Modal 關閉按鈕
     if (e.target.matches('.modal .delete, .modal-background')) {
         closeAllModals();
@@ -653,28 +682,212 @@ async function loadGroupImages(groupId) {
     const selectedList = document.getElementById('selectedImagesList');
     const availableList = document.getElementById('availableImagesList');
     
+    // 找到目標群組
+    const targetGroup = appState.groups.find(g => g.id === groupId);
+    const imageIdsInGroup = new Set(targetGroup ? (targetGroup.materials || []).map(m => m.id) : []);
+    
+    // 計算素材使用情況
+    const materialUsage = {};
+    appState.groups.forEach(g => {
+        if (g.materials) {
+            g.materials.forEach(material => {
+                if (!materialUsage[material.id]) materialUsage[material.id] = [];
+                if (g.id !== groupId) materialUsage[material.id].push(g.name);
+            });
+        }
+    });
+    
+    // 渲染已選圖片
     if (selectedList) {
-        selectedList.innerHTML = '<p class="has-text-grey-light has-text-centered p-4">此群組尚無圖片</p>';
+        selectedList.innerHTML = '';
+        if (imageIdsInGroup.size === 0) {
+            selectedList.innerHTML = '<p class="has-text-grey-light has-text-centered p-4">此群組尚無圖片</p>';
+        } else {
+            if (targetGroup && targetGroup.materials) {
+                targetGroup.materials.forEach(material => {
+                    selectedList.appendChild(createDraggableImageItem(material, false, materialUsage));
+                });
+            }
+        }
     }
     
-    if (availableList) {
-        let html = '';
-        appState.media.filter(item => item.type === 'image').forEach(item => {
-            html += `
-                <div class="image-list-item">
-                    <img src="${item.url}" alt="${item.filename}">
-                    <div class="image-item-info">
-                        <p>${item.filename}</p>
-                        <div class="tags">
-                            <span class="tag is-light">可用</span>
-                        </div>
-                    </div>
-                    <button class="button is-small is-primary toggle-button" 
-                            data-image-id="${item.id}">加入</button>
-                </div>
-            `;
+    // 不再需要渲染可用圖片區塊
+}
+
+function createDraggableImageItem(material, isAvailable, usage) {
+    const item = document.createElement('div');
+    item.className = 'image-list-item';
+    item.dataset.imageId = material.id;
+    item.draggable = true;
+
+    let tags = '';
+    if (usage[material.id] && usage[material.id].length > 0) {
+        tags += `<span class="tag is-info is-small" title="${usage[material.id].join(', ')}">在其他群組</span>`;
+    }
+
+    item.innerHTML = `
+        <img src="${material.url}" alt="${material.filename}">
+        <div class="image-item-info">
+            <p>${material.filename}</p>
+            <div class="tags">${tags}</div>
+        </div>
+        <button class="button is-small is-danger toggle-button" data-image-id="${material.id}">
+            <i class="fas fa-trash"></i>
+        </button>
+    `;
+    
+    return item;
+}
+
+async function handleGroupImageUpload() {
+    const groupId = document.getElementById('modalGroupId').value;
+    const groupImageUploadInput = document.getElementById('groupImageUpload');
+    const uploadToGroupButton = document.getElementById('uploadToGroupButton');
+    const groupUploadProgress = document.getElementById('groupUploadProgress');
+    const groupUploadFileName = document.getElementById('groupUploadFileName');
+    
+    const files = groupImageUploadInput.files;
+    
+    if (!groupId || files.length === 0) {
+        alert('請選擇要上傳的檔案。');
+        return;
+    }
+    
+    uploadToGroupButton.classList.add('is-loading');
+    uploadToGroupButton.disabled = true;
+    if (groupUploadProgress) groupUploadProgress.style.display = 'block';
+    
+    try {
+        // 逐個上傳檔案到媒體庫
+        const uploadedMaterials = [];
+        
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const response = await fetch('/api/media', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+                },
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error(`上傳 ${file.name} 失敗`);
+            }
+            
+            const result = await response.json();
+            if (result.success && result.material) {
+                uploadedMaterials.push(result.material);
+            }
+        }
+        
+        // 將上傳的圖片加入群組
+        if (uploadedMaterials.length > 0) {
+            const groupUpdateFormData = new FormData();
+            groupUpdateFormData.append('action', 'add_materials');
+            uploadedMaterials.forEach(material => {
+                groupUpdateFormData.append('material_ids[]', material.id);
+            });
+            
+            const groupResponse = await fetch(`/ws/api/groups/${groupId}/materials`, {
+                method: 'POST',
+                body: groupUpdateFormData
+            });
+            
+            if (!groupResponse.ok) {
+                const errorData = await groupResponse.json();
+                throw new Error(errorData.error || '將圖片加入群組失敗');
+            }
+            
+            // 立即更新UI - 添加新上傳的圖片到已選列表
+            const selectedList = document.getElementById('selectedImagesList');
+            const placeholder = selectedList.querySelector('p');
+            if (placeholder) placeholder.remove();
+            
+            // 計算使用情況（簡化版本）
+            const materialUsage = {};
+            
+            // 添加新上傳的圖片到已選列表
+            uploadedMaterials.forEach(material => {
+                selectedList.appendChild(createDraggableImageItem(material, false, materialUsage));
+            });
+            
+            alert(`成功上傳 ${uploadedMaterials.length} 張圖片到群組！`);
+            
+            // 重新載入數據以確保同步
+            const data = await getInitialData();
+            setState(data);
+        }
+        
+        // 重置表單
+        groupImageUploadInput.value = '';
+        groupUploadFileName.textContent = '未選擇任何檔案';
+        
+    } catch (error) {
+        console.error('上傳失敗:', error);
+        alert('上傳失敗: ' + error.message);
+    } finally {
+        uploadToGroupButton.classList.remove('is-loading');
+        uploadToGroupButton.disabled = true;
+        if (groupUploadProgress) groupUploadProgress.style.display = 'none';
+    }
+}
+
+function handleImageToggle(button) {
+    const item = button.closest('.image-list-item');
+    const selectedList = document.getElementById('selectedImagesList');
+    const icon = button.querySelector('i');
+    
+    // 只允許從已選列表中移除圖片
+    if (selectedList.contains(item)) {
+        if (confirm('確定要從此群組中移除這張圖片嗎？')) {
+            item.remove();
+            
+            // 如果已選列表為空，顯示佔位符
+            if (selectedList.children.length === 0) {
+                selectedList.innerHTML = '<p class="has-text-grey-light has-text-centered p-4">此群組尚無圖片</p>';
+            }
+        }
+    }
+}
+
+async function handleSaveGroupChanges(button) {
+    button.classList.add('is-loading');
+    const groupId = document.getElementById('modalGroupId').value;
+    const selectedImagesList = document.getElementById('selectedImagesList');
+    const imageIds = [...selectedImagesList.querySelectorAll('.image-list-item')].map(item => item.dataset.imageId);
+    
+    try {
+        const formData = new FormData();
+        formData.append('action', 'update_materials');
+        imageIds.forEach(id => {
+            formData.append('material_ids[]', id);
         });
-        availableList.innerHTML = html || '<p class="has-text-grey-light has-text-centered p-4">沒有可用圖片</p>';
+        
+        const response = await fetch(`/ws/api/groups/${groupId}/materials`, {
+            method: 'PUT',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error('儲存群組變更失敗');
+        }
+        
+        alert('群組變更已儲存！');
+        closeAllModals();
+        
+        // 重新載入數據
+        const data = await getInitialData();
+        setState(data);
+        
+    } catch (error) {
+        console.error('儲存失敗:', error);
+        alert('儲存失敗: ' + error.message);
+    } finally {
+        button.classList.remove('is-loading');
     }
 }
 
@@ -857,6 +1070,57 @@ function initializeWebSocket() {
     }
 }
 
+// 拖拽排序功能
+function setupDragAndDrop() {
+    let draggedItem = null;
+    
+    document.body.addEventListener('dragstart', (e) => {
+        if (e.target.classList.contains('image-list-item')) {
+            draggedItem = e.target;
+            e.target.style.opacity = '0.5';
+        }
+    });
+    
+    document.body.addEventListener('dragend', (e) => {
+        if (e.target.classList.contains('image-list-item')) {
+            e.target.style.opacity = '';
+            draggedItem = null;
+        }
+    });
+    
+    document.body.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const selectedList = document.getElementById('selectedImagesList');
+        if (selectedList && selectedList.contains(e.target.closest('.image-list-item'))) {
+            const afterElement = getDragAfterElement(selectedList, e.clientY);
+            if (afterElement == null) {
+                selectedList.appendChild(draggedItem);
+            } else {
+                selectedList.insertBefore(draggedItem, afterElement);
+            }
+        }
+    });
+    
+    document.body.addEventListener('drop', (e) => {
+        e.preventDefault();
+    });
+}
+
+function getDragAfterElement(container, y) {
+    const draggableElements = [...container.querySelectorAll('.image-list-item:not([style*="opacity: 0.5"])')];
+    
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
 // 應用程式初始化
 async function initializeApp() {
     if (!checkAuthentication()) {
@@ -865,6 +1129,9 @@ async function initializeApp() {
     
     // 設置事件處理器
     setupEventHandlers();
+    
+    // 設置拖拽排序
+    setupDragAndDrop();
     
     // 訂閱狀態更新
     subscribe(render);
