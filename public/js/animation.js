@@ -8,7 +8,7 @@ const DEFAULT_INTERVALS = {
 };
 
 // 輔助函數：初始化通用輪播動畫
-function initializeGenericCarousel(containerElement, slideInterval) {
+function initializeGenericCarousel(containerElement, slideInterval, startOffset = 0) {
   if (!containerElement) {
     console.warn("initializeGenericCarousel: 傳入的容器元素為 null");
     return;
@@ -44,8 +44,16 @@ function initializeGenericCarousel(containerElement, slideInterval) {
   }
 
   inner.style.transition = "none";
-  inner.style.transform = "translateX(0)";
-  let currentIndex = 0;
+  
+  // 計算起始索引，確保不超出範圍
+  let currentIndex = Math.min(startOffset, items.length - 1);
+  if (currentIndex < 0) currentIndex = 0;
+  
+  // 設定初始位置
+  inner.style.transform = `translateX(-${currentIndex * 100}%)`;
+  
+  console.log(`輪播初始化：總共 ${items.length} 個項目，從第 ${currentIndex + 1} 個開始 (偏移量: ${startOffset})`);
+  
   inner.querySelectorAll('.cloned-item').forEach(clone => clone.remove());
 
   const firstClone = items[0].cloneNode(true);
@@ -189,7 +197,9 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     // 準備內容陣列
     const contentItems = [];
     
-    // 根據指派類型處理內容
+    // 根據指派類型處理內容，並記錄偏移量
+    let carouselOffset = 0;
+    
     sectionAssignments.forEach(assignment => {
       if (assignment.content_type === 'single_media') {
         // 單一媒體
@@ -205,6 +215,12 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
         // 群組引用
         const group = groups.find(g => g.id === assignment.content_id);
         if (group && group.materials) {
+          // 記錄偏移量
+          if (assignment.offset !== undefined && assignment.offset > 0) {
+            carouselOffset = assignment.offset;
+            console.log(`區塊 ${sectionKey} 設定偏移量: ${carouselOffset}`);
+          }
+          
           // 將群組中的所有媒體加入內容陣列
           group.materials.forEach(material => {
             contentItems.push({
@@ -293,8 +309,8 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     
     // 初始化輪播
     if (contentItems.length > 0 && slideInterval > 0) {
-      initializeGenericCarousel(wrapperToInitialize, slideInterval);
-      console.log(`區塊 ${sectionKey} 已啟用輪播，間隔 ${slideInterval / 1000} 秒，項目數: ${contentItems.length}`);
+      initializeGenericCarousel(wrapperToInitialize, slideInterval, carouselOffset);
+      console.log(`區塊 ${sectionKey} 已啟用輪播，間隔 ${slideInterval / 1000} 秒，項目數: ${contentItems.length}，偏移量: ${carouselOffset}`);
     } else if (contentItems.length === 1) {
       console.log(`區塊 ${sectionKey} 顯示單一內容。`);
       // 確保單一影片播放

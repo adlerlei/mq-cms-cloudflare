@@ -83,3 +83,50 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* 拖拽排序樣式 */
+.image-list-item {
+    cursor: move !important;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.image-list-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.image-list-item.dragging {
+    opacity: 0.5;
+    transform: rotate(5deg);
+}
+
+.image-list-item img {
+    pointer-events: none;
+}
+
+.image-item-info {
+    pointer-events: none;
+}
+
+.sortable-list {
+    min-height: 100px;
+    border: 2px dashed transparent;
+    border-radius: 8px;
+    padding: 10px;
+    transition: all 0.3s ease;
+}
+
+.sortable-list.drag-over {
+    border-color: #3273dc;
+    background-color: #f0f7ff;
+}
+
+.sortable-list:empty::before {
+    content: "拖拽圖片到此處進行排序";
+    display: block;
+    text-align: center;
+    color: #999;
+    font-style: italic;
+    padding: 20px;
+}
