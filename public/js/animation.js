@@ -329,31 +329,63 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
   }
 }
 
+// WebSocket 相關變數
+let currentSocket = null;
+let lastHeartbeatTime = 0;
+let heartbeatCheckTimer = null;
+const HEARTBEAT_TIMEOUT = 65000; // 65秒，略長於兩個ping週期(30秒*2)
+const RECONNECT_DELAY = 5000; // 5秒重連延遲
+
 // WebSocket 初始化
 function initializeWebSocket() {
   try {
+    // 清理舊的連接和計時器
+    if (currentSocket) {
+      currentSocket.close();
+      currentSocket = null;
+    }
+    if (heartbeatCheckTimer) {
+      clearTimeout(heartbeatCheckTimer);
+      heartbeatCheckTimer = null;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     
     console.log('🔌 正在連接 WebSocket:', wsUrl);
     
-    const socket = new WebSocket(wsUrl);
+    currentSocket = new WebSocket(wsUrl);
     
-    socket.onopen = () => {
+    currentSocket.onopen = () => {
       console.log('✅ WebSocket 連接成功');
+      lastHeartbeatTime = Date.now();
+      startHeartbeatCheck();
     };
     
-    socket.onmessage = (event) => {
+    currentSocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         console.log('📨 收到 WebSocket 訊息:', data);
         
-        if (data.type === 'playlist_updated' || data.type === 'media_updated') {
+        // 更新最後心跳時間（任何訊息都算作心跳）
+        lastHeartbeatTime = Date.now();
+        
+        if (data.type === 'ping') {
+          console.log('🏓 收到伺服器ping，回應pong');
+          // 立即回應pong
+          if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
+            currentSocket.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+          }
+        } else if (data.type === 'playlist_updated' || data.type === 'media_updated') {
           console.log('🔄 媒體更新，重新載入...');
           fetchMediaData().then(updateAllSections);
         } else if (data.type === 'settings_updated') {
           console.log('⚙️ 設定更新，重新載入...');
-          fetchMediaData().then(updateAllSections);
+          // 強制重新載入並更新所有區塊
+          fetchMediaData().then(data => {
+            console.log('🔄 因設定更新而重新載入的數據:', data);
+            updateAllSections(data);
+          });
         } else if (data.content) {
           // 顯示廣播訊息（如果有廣播訊息元素的話）
           console.log('📢 收到廣播訊息:', data.content);
@@ -363,19 +395,57 @@ function initializeWebSocket() {
       }
     };
     
-    socket.onclose = () => {
-      console.log('❌ WebSocket 連接關閉');
-      // 5秒後重新連接
-      setTimeout(initializeWebSocket, 5000);
+    currentSocket.onclose = (event) => {
+      console.log('❌ WebSocket 連接關閉，代碼:', event.code, '原因:', event.reason);
+      currentSocket = null;
+      
+      // 停止心跳檢查
+      if (heartbeatCheckTimer) {
+        clearTimeout(heartbeatCheckTimer);
+        heartbeatCheckTimer = null;
+      }
+      
+      // 延遲重新連接
+      console.log(`⏰ ${RECONNECT_DELAY/1000}秒後重新連接...`);
+      setTimeout(initializeWebSocket, RECONNECT_DELAY);
     };
     
-    socket.onerror = (error) => {
+    currentSocket.onerror = (error) => {
       console.error('❌ WebSocket 錯誤:', error);
     };
     
   } catch (error) {
     console.error('WebSocket 初始化失敗:', error);
+    // 如果初始化失敗，也要重試
+    setTimeout(initializeWebSocket, RECONNECT_DELAY);
   }
+}
+
+// 開始心跳檢查
+function startHeartbeatCheck() {
+  // 清理舊的計時器
+  if (heartbeatCheckTimer) {
+    clearTimeout(heartbeatCheckTimer);
+  }
+  
+  heartbeatCheckTimer = setTimeout(() => {
+    const timeSinceLastHeartbeat = Date.now() - lastHeartbeatTime;
+    
+    if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
+      console.warn(`⚠️ 心跳超時 (${timeSinceLastHeartbeat}ms > ${HEARTBEAT_TIMEOUT}ms)，主動重連`);
+      
+      // 主動關閉連接並重新連接
+      if (currentSocket) {
+        currentSocket.close(1000, 'Heartbeat timeout');
+      } else {
+        // 如果socket已經不存在，直接重連
+        initializeWebSocket();
+      }
+    } else {
+      // 繼續下一次檢查
+      startHeartbeatCheck();
+    }
+  }, HEARTBEAT_TIMEOUT);
 }
 
 document.addEventListener("DOMContentLoaded", () => {

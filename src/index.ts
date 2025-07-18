@@ -44,10 +44,13 @@ function generateId(): string {
 export class MessageBroadcaster {
 	private connections: Set<WebSocket>;
 	private state: DurableObjectState;
+	private pingInterval: number = 30000; // 30秒發送一次ping
 
 	constructor(state: DurableObjectState) {
 		this.state = state;
 		this.connections = new Set();
+		// 設定心跳alarm
+		this.setupHeartbeat();
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -436,6 +439,19 @@ export class MessageBroadcaster {
 			server.addEventListener('close', closeOrErrorHandler);
 			server.addEventListener('error', closeOrErrorHandler);
 
+			// 監聽客戶端訊息，處理pong回應
+			server.addEventListener('message', (event) => {
+				try {
+					const data = JSON.parse(event.data);
+					if (data.type === 'pong') {
+						console.log('收到客戶端pong回應');
+						// 可以在這裡記錄客戶端的活躍狀態
+					}
+				} catch (error) {
+					console.warn('解析WebSocket訊息失敗:', error);
+				}
+			});
+
 			server.send(JSON.stringify({ type: 'welcome', count: this.connections.size }));
 			this.broadcast(JSON.stringify({ type: 'user_joined', count: this.connections.size }));
 
@@ -539,6 +555,40 @@ export class MessageBroadcaster {
 
 	async saveSettings(settings: Settings): Promise<void> {
 		await this.state.storage.put('settings', settings);
+	}
+
+	// 設定心跳機制
+	private async setupHeartbeat(): Promise<void> {
+		// 設定alarm在30秒後觸發
+		const currentAlarm = await this.state.storage.getAlarm();
+		if (currentAlarm === null) {
+			await this.state.storage.setAlarm(Date.now() + this.pingInterval);
+		}
+	}
+
+	// Durable Object alarm處理器
+	async alarm(): Promise<void> {
+		console.log('🏓 發送心跳ping訊息給所有客戶端');
+		
+		// 發送ping訊息給所有連接的客戶端
+		this.broadcast(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+		
+		// 清理已斷線的連接
+		const deadConnections = new Set<WebSocket>();
+		for (const conn of this.connections) {
+			if (conn.readyState !== WebSocket.READY_STATE_OPEN) {
+				deadConnections.add(conn);
+			}
+		}
+		
+		// 移除已斷線的連接
+		for (const deadConn of deadConnections) {
+			this.connections.delete(deadConn);
+			console.log('清理已斷線的WebSocket連接');
+		}
+		
+		// 設定下一次alarm
+		await this.state.storage.setAlarm(Date.now() + this.pingInterval);
 	}
 }
 
