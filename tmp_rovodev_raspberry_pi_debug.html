@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>樹莓派 WebSocket 診斷工具</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #f5f5f5;
+            font-size: 16px; /* 樹莓派顯示友好 */
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .section { 
+            margin: 20px 0; 
+            padding: 20px; 
+            background: white; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+        }
+        .log { 
+            background: #f8f9fa; 
+            padding: 15px; 
+            border-radius: 4px; 
+            margin: 10px 0; 
+            max-height: 500px; 
+            overflow-y: auto; 
+            font-family: monospace; 
+            font-size: 14px;
+            border: 2px solid #dee2e6;
+        }
+        .button { 
+            padding: 15px 20px; 
+            margin: 10px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer;
+            font-size: 16px;
+            min-width: 120px;
+        }
+        .button:hover { background: #0056b3; }
+        .button.success { background: #28a745; }
+        .button.warning { background: #ffc107; color: #212529; }
+        .button.danger { background: #dc3545; }
+        .status { 
+            padding: 15px; 
+            border-radius: 4px; 
+            margin: 10px 0; 
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
+        .status.connecting { background: #fff3cd; color: #856404; }
+        .ping { color: #28a745; font-weight: bold; }
+        .pong { color: #17a2b8; font-weight: bold; }
+        .settings { color: #6f42c1; font-weight: bold; background: #f8f9fa; padding: 2px 4px; }
+        .playlist { color: #fd7e14; font-weight: bold; }
+        .error { color: #dc3545; font-weight: bold; }
+        .info { color: #007bff; }
+        .warning { color: #856404; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .metrics { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+            gap: 15px; 
+            margin: 15px 0;
+        }
+        .metric { 
+            background: #e9ecef; 
+            padding: 15px; 
+            border-radius: 4px; 
+            text-align: center; 
+        }
+        .metric-value { 
+            font-size: 24px; 
+            font-weight: bold; 
+            color: #007bff; 
+        }
+        .metric-label { 
+            font-size: 14px; 
+            color: #6c757d; 
+            margin-top: 5px; 
+        }
+        .browser-info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍓 樹莓派 WebSocket 診斷工具</h1>
+        <p style="font-size: 18px; color: #6c757d;">專為樹莓派環境設計的 WebSocket 連接診斷工具</p>
+        
+        <!-- 瀏覽器信息 -->
+        <div class="section">
+            <h3>🌐 瀏覽器環境信息</h3>
+            <div id="browserInfo" class="browser-info">載入中...</div>
+        </div>
+        
+        <!-- WebSocket 狀態 -->
+        <div class="section">
+            <h3>📡 WebSocket 連接狀態</h3>
+            <div id="wsStatus" class="status disconnected">未連接</div>
+            
+            <div class="metrics">
+                <div class="metric">
+                    <div id="connectionCount" class="metric-value">0</div>
+                    <div class="metric-label">連接次數</div>
+                </div>
+                <div class="metric">
+                    <div id="pingCount" class="metric-value">0</div>
+                    <div class="metric-label">收到 Ping</div>
+                </div>
+                <div class="metric">
+                    <div id="settingsCount" class="metric-value">0</div>
+                    <div class="metric-label">設定更新</div>
+                </div>
+                <div class="metric">
+                    <div id="playlistCount" class="metric-value">0</div>
+                    <div class="metric-label">播放列表更新</div>
+                </div>
+            </div>
+            
+            <div>
+                <button class="button" onclick="connectWS()">連接 WebSocket</button>
+                <button class="button danger" onclick="disconnectWS()">斷開連接</button>
+                <button class="button warning" onclick="clearLog()">清除日誌</button>
+                <button class="button success" onclick="testSettings()">測試設定更新</button>
+            </div>
+        </div>
+        
+        <!-- 實時日誌 -->
+        <div class="section">
+            <h3>📝 實時事件日誌</h3>
+            <div id="eventLog" class="log">等待 WebSocket 事件...</div>
+        </div>
+        
+        <!-- 網路測試 -->
+        <div class="section">
+            <h3>🔧 網路連接測試</h3>
+            <div>
+                <button class="button" onclick="testAPI()">測試 API 連接</button>
+                <button class="button" onclick="testMediaData()">測試媒體數據</button>
+                <button class="button warning" onclick="forceReload()">強制重新載入頁面</button>
+            </div>
+            <div id="networkStatus" class="log" style="max-height: 200px;">網路測試結果將顯示在這裡...</div>
+        </div>
+    </div>
+
+    <script>
+        // 全局變數
+        let debugSocket = null;
+        let connectionCount = 0;
+        let pingCount = 0;
+        let settingsCount = 0;
+        let playlistCount = 0;
+        let logContainer = document.getElementById('eventLog');
+        let networkContainer = document.getElementById('networkStatus');
+        
+        // 顯示瀏覽器信息
+        function showBrowserInfo() {
+            const info = {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language,
+                cookieEnabled: navigator.cookieEnabled,
+                onLine: navigator.onLine,
+                webSocketSupport: 'WebSocket' in window,
+                localStorageSupport: 'localStorage' in window,
+                screenSize: `${screen.width}x${screen.height}`,
+                viewportSize: `${window.innerWidth}x${window.innerHeight}`,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                currentTime: new Date().toLocaleString()
+            };
+            
+            document.getElementById('browserInfo').innerHTML = Object.entries(info)
+                .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+                .join('<br>');
+        }
+        
+        // 日誌函數
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type;
+            logContainer.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`[${timestamp}] ${message}`);
+        }
+        
+        function networkLog(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            networkContainer.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            networkContainer.scrollTop = networkContainer.scrollHeight;
+        }
+        
+        // 更新狀態
+        function updateStatus(status, message) {
+            const statusEl = document.getElementById('wsStatus');
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = message;
+        }
+        
+        function updateMetrics() {
+            document.getElementById('connectionCount').textContent = connectionCount;
+            document.getElementById('pingCount').textContent = pingCount;
+            document.getElementById('settingsCount').textContent = settingsCount;
+            document.getElementById('playlistCount').textContent = playlistCount;
+        }
+        
+        function clearLog() {
+            logContainer.innerHTML = '';
+            networkContainer.innerHTML = '';
+        }
+        
+        // WebSocket 連接
+        function connectWS() {
+            if (debugSocket) {
+                debugSocket.close();
+            }
+            
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            updateStatus('connecting', '正在連接...');
+            log(`🔌 嘗試連接: ${wsUrl}`, 'info');
+            
+            try {
+                debugSocket = new WebSocket(wsUrl);
+                
+                debugSocket.onopen = () => {
+                    connectionCount++;
+                    updateStatus('connected', '✅ 已連接');
+                    updateMetrics();
+                    log('✅ WebSocket 連接成功！', 'info');
+                };
+                
+                debugSocket.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        let logClass = 'info';
+                        let emoji = '📨';
+                        
+                        if (data.type === 'ping') {
+                            pingCount++;
+                            logClass = 'ping';
+                            emoji = '🏓';
+                            // 自動回應 pong
+                            debugSocket.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+                            log('🏓 收到 ping，已自動回應 pong', 'pong');
+                        } else if (data.type === 'settings_updated') {
+                            settingsCount++;
+                            logClass = 'settings';
+                            emoji = '⚙️';
+                            log('🎉🎉🎉 收到設定更新事件！這就是我們要找的！', 'settings');
+                            
+                            // 模擬 display.html 的行為
+                            setTimeout(() => {
+                                log('🔄 模擬重新載入媒體數據...', 'info');
+                                testMediaData();
+                            }, 1000);
+                        } else if (data.type === 'playlist_updated') {
+                            playlistCount++;
+                            logClass = 'playlist';
+                            emoji = '📋';
+                        }
+                        
+                        updateMetrics();
+                        log(`${emoji} 收到事件: ${JSON.stringify(data)}`, logClass);
+                        
+                    } catch (error) {
+                        log(`❌ 訊息解析失敗: ${error.message}`, 'error');
+                    }
+                };
+                
+                debugSocket.onclose = (event) => {
+                    updateStatus('disconnected', '❌ 連接關閉');
+                    log(`❌ WebSocket 關閉: 代碼=${event.code}, 原因=${event.reason}`, 'error');
+                    
+                    // 樹莓派環境下自動重連
+                    if (event.code !== 1000) {
+                        log('⏰ 5秒後自動重連...', 'warning');
+                        setTimeout(connectWS, 5000);
+                    }
+                };
+                
+                debugSocket.onerror = (error) => {
+                    updateStatus('disconnected', '❌ 連接錯誤');
+                    log(`❌ WebSocket 錯誤: ${error}`, 'error');
+                };
+                
+            } catch (error) {
+                updateStatus('disconnected', '❌ 連接失敗');
+                log(`❌ WebSocket 初始化失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        function disconnectWS() {
+            if (debugSocket) {
+                debugSocket.close(1000, 'Manual disconnect');
+                debugSocket = null;
+                updateStatus('disconnected', '手動斷開');
+                log('🔌 手動斷開連接', 'warning');
+            }
+        }
+        
+        // 測試函數
+        async function testSettings() {
+            try {
+                networkLog('🧪 測試設定更新...');
+                const randomSettings = {
+                    header_interval: Math.floor(Math.random() * 10) + 3,
+                    carousel_interval: Math.floor(Math.random() * 10) + 3,
+                    footer_interval: Math.floor(Math.random() * 10) + 3
+                };
+                
+                const response = await fetch('/ws/api/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(randomSettings)
+                });
+                
+                if (response.ok) {
+                    networkLog(`✅ 設定更新成功: ${JSON.stringify(randomSettings)}`);
+                    log('📤 已發送設定更新請求，等待 WebSocket 事件...', 'settings');
+                } else {
+                    networkLog(`❌ 設定更新失敗: ${response.status}`);
+                }
+            } catch (error) {
+                networkLog(`❌ 設定更新錯誤: ${error.message}`);
+            }
+        }
+        
+        async function testAPI() {
+            try {
+                networkLog('🔗 測試基本 API 連接...');
+                const response = await fetch('/api/media_with_settings');
+                if (response.ok) {
+                    networkLog('✅ API 連接正常');
+                } else {
+                    networkLog(`❌ API 連接失敗: ${response.status}`);
+                }
+            } catch (error) {
+                networkLog(`❌ API 連接錯誤: ${error.message}`);
+            }
+        }
+        
+        async function testMediaData() {
+            try {
+                networkLog('📊 測試媒體數據載入...');
+                const response = await fetch('/api/media_with_settings');
+                const data = await response.json();
+                
+                networkLog(`✅ 媒體數據載入成功:`);
+                networkLog(`   - 媒體: ${data.materials?.length || 0} 個`);
+                networkLog(`   - 指派: ${data.assignments?.length || 0} 個`);
+                networkLog(`   - 群組: ${data.groups?.length || 0} 個`);
+                networkLog(`   - 設定: 頁首=${data.settings?.header_interval}s, 輪播=${data.settings?.carousel_interval}s, 頁尾=${data.settings?.footer_interval}s`);
+                
+            } catch (error) {
+                networkLog(`❌ 媒體數據載入失敗: ${error.message}`);
+            }
+        }
+        
+        function forceReload() {
+            log('🔄 強制重新載入頁面...', 'warning');
+            window.location.reload(true);
+        }
+        
+        // 頁面載入時初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            showBrowserInfo();
+            connectWS();
+            
+            // 定期更新瀏覽器信息
+            setInterval(() => {
+                document.querySelector('.browser-info strong:last-of-type').nextSibling.textContent = 
+                    ' ' + new Date().toLocaleString();
+            }, 1000);
+        });
+        
+        // 監聽頁面可見性變化（樹莓派可能會進入省電模式）
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                log('👁️ 頁面變為可見，檢查 WebSocket 連接...', 'info');
+                if (!debugSocket || debugSocket.readyState !== WebSocket.OPEN) {
+                    log('🔄 重新連接 WebSocket...', 'warning');
+                    connectWS();
+                }
+            } else {
+                log('😴 頁面變為隱藏', 'warning');
+            }
+        });
+    </script>
+</body>
+</html>

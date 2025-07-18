@@ -336,6 +336,14 @@ let heartbeatCheckTimer = null;
 const HEARTBEAT_TIMEOUT = 65000; // 65秒，略長於兩個ping週期(30秒*2)
 const RECONNECT_DELAY = 5000; // 5秒重連延遲
 
+// 樹莓派特殊處理標記
+const isRaspberryPi = /arm|aarch64/i.test(navigator.platform) || 
+                     /raspberry/i.test(navigator.userAgent) ||
+                     /linux.*arm/i.test(navigator.userAgent);
+
+// 設定更新計數器（用於樹莓派調試）
+let settingsUpdateCount = 0;
+
 // WebSocket 初始化
 function initializeWebSocket() {
   try {
@@ -380,12 +388,35 @@ function initializeWebSocket() {
           console.log('🔄 媒體更新，重新載入...');
           fetchMediaData().then(updateAllSections);
         } else if (data.type === 'settings_updated') {
-          console.log('⚙️ 設定更新，重新載入...');
-          // 強制重新載入並更新所有區塊
-          fetchMediaData().then(data => {
-            console.log('🔄 因設定更新而重新載入的數據:', data);
-            updateAllSections(data);
-          });
+          settingsUpdateCount++;
+          console.log(`⚙️ 設定更新 #${settingsUpdateCount}，重新載入...`);
+          
+          // 樹莓派特殊處理：強制清除可能的緩存
+          if (isRaspberryPi) {
+            console.log('🍓 檢測到樹莓派環境，使用特殊處理邏輯');
+            
+            // 添加隨機參數避免緩存
+            const timestamp = Date.now();
+            const apiUrl = `/api/media_with_settings?t=${timestamp}&rpi=1`;
+            
+            fetch(apiUrl)
+              .then(response => response.json())
+              .then(data => {
+                console.log('🔄 樹莓派專用：強制重新載入數據完成', data);
+                updateAllSections(data);
+              })
+              .catch(error => {
+                console.error('🍓 樹莓派設定更新失敗:', error);
+                // 降級到普通處理
+                fetchMediaData().then(updateAllSections);
+              });
+          } else {
+            // 非樹莓派環境的正常處理
+            fetchMediaData().then(data => {
+              console.log('🔄 因設定更新而重新載入的數據:', data);
+              updateAllSections(data);
+            });
+          }
         } else if (data.content) {
           // 顯示廣播訊息（如果有廣播訊息元素的話）
           console.log('📢 收到廣播訊息:', data.content);
@@ -449,6 +480,70 @@ function startHeartbeatCheck() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  console.log('🎬 頁面載入完成，開始初始化...');
+  
   fetchMediaData().then(updateAllSections);
   initializeWebSocket();
+  
+  // 樹莓派特殊處理：防止瀏覽器進入休眠狀態
+  if (isRaspberryPi) {
+    console.log('🍓 樹莓派環境：啟用防休眠機制');
+    
+    // 監聽頁面可見性變化
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        console.log('👁️ 頁面變為可見，檢查 WebSocket 連接...');
+        if (!currentSocket || currentSocket.readyState !== WebSocket.OPEN) {
+          console.log('🔄 重新連接 WebSocket...');
+          initializeWebSocket();
+        }
+      } else {
+        console.log('😴 頁面變為隱藏');
+      }
+    });
+    
+    // 防止樹莓派瀏覽器休眠的機制
+    setInterval(() => {
+      // 每5分鐘檢查一次連接狀態
+      if (!currentSocket || currentSocket.readyState !== WebSocket.OPEN) {
+        console.log('🔄 樹莓派防休眠：重新連接 WebSocket...');
+        initializeWebSocket();
+      } else {
+        console.log('💓 樹莓派防休眠：連接正常');
+      }
+      
+      // 輕微的 DOM 操作保持頁面活躍
+      document.body.style.opacity = '0.9999';
+      setTimeout(() => {
+        document.body.style.opacity = '1';
+      }, 100);
+    }, 300000); // 5分鐘
+    
+    // 監聽焦點事件
+    window.addEventListener('focus', () => {
+      console.log('🎯 樹莓派頁面重新獲得焦點');
+      if (!currentSocket || currentSocket.readyState !== WebSocket.OPEN) {
+        initializeWebSocket();
+      }
+    });
+    
+    // 監聽滑鼠移動（如果有滑鼠的話）
+    let lastActivity = Date.now();
+    document.addEventListener('mousemove', () => {
+      lastActivity = Date.now();
+    });
+    
+    // 檢查長時間無活動的情況
+    setInterval(() => {
+      const timeSinceActivity = Date.now() - lastActivity;
+      if (timeSinceActivity > 1800000) { // 30分鐘無活動
+        console.log('⚠️ 樹莓派長時間無活動，刷新連接...');
+        if (currentSocket) {
+          currentSocket.close();
+          setTimeout(initializeWebSocket, 1000);
+        }
+        lastActivity = Date.now();
+      }
+    }, 600000); // 每10分鐘檢查一次
+  }
 });
