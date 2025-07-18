@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>設定更新測試</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .button:hover { background: #0056b3; }
+        .log { background: #f8f9fa; padding: 10px; border-radius: 3px; margin: 10px 0; max-height: 200px; overflow-y: auto; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 設定更新即時同步測試</h1>
+        
+        <div class="section">
+            <h3>📡 WebSocket 連接狀態</h3>
+            <div id="wsStatus">未連接</div>
+            <button class="button" onclick="connectWebSocket()">重新連接</button>
+        </div>
+        
+        <div class="section">
+            <h3>⚙️ 模擬設定更新</h3>
+            <label>頁首間隔 (秒): <input type="number" id="headerInterval" value="5" min="1" max="60"></label><br><br>
+            <label>輪播間隔 (秒): <input type="number" id="carouselInterval" value="6" min="1" max="60"></label><br><br>
+            <label>頁尾間隔 (秒): <input type="number" id="footerInterval" value="7" min="1" max="60"></label><br><br>
+            <button class="button" onclick="updateSettings()">更新設定</button>
+        </div>
+        
+        <div class="section">
+            <h3>📊 當前設定</h3>
+            <div id="currentSettings">載入中...</div>
+            <button class="button" onclick="fetchCurrentSettings()">重新載入設定</button>
+        </div>
+        
+        <div class="section">
+            <h3>📝 事件日誌</h3>
+            <div id="eventLog" class="log"></div>
+            <button class="button" onclick="clearLog()">清除日誌</button>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let logContainer = document.getElementById('eventLog');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'success' ? 'success' : type === 'error' ? 'error' : 'info';
+            logContainer.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`[${timestamp}] ${message}`);
+        }
+        
+        function clearLog() {
+            logContainer.innerHTML = '';
+        }
+        
+        function connectWebSocket() {
+            if (socket) {
+                socket.close();
+            }
+            
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            log(`正在連接 WebSocket: ${wsUrl}`, 'info');
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = () => {
+                document.getElementById('wsStatus').innerHTML = '<span class="success">✅ 已連接</span>';
+                log('WebSocket 連接成功', 'success');
+            };
+            
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    log(`收到 WebSocket 訊息: ${JSON.stringify(data)}`, 'info');
+                    
+                    if (data.type === 'settings_updated') {
+                        log('🎉 收到設定更新通知！', 'success');
+                        // 自動重新載入設定
+                        setTimeout(fetchCurrentSettings, 500);
+                    } else if (data.type === 'playlist_updated') {
+                        log('📋 收到播放列表更新通知', 'info');
+                    } else if (data.type === 'welcome') {
+                        log(`歡迎訊息，當前連接數: ${data.count}`, 'info');
+                    }
+                } catch (error) {
+                    log(`WebSocket 訊息解析失敗: ${error.message}`, 'error');
+                }
+            };
+            
+            socket.onclose = () => {
+                document.getElementById('wsStatus').innerHTML = '<span class="error">❌ 已斷線</span>';
+                log('WebSocket 連接關閉', 'error');
+            };
+            
+            socket.onerror = (error) => {
+                log(`WebSocket 錯誤: ${error}`, 'error');
+            };
+        }
+        
+        async function fetchCurrentSettings() {
+            try {
+                log('正在獲取當前設定...', 'info');
+                const response = await fetch('/api/media_with_settings');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                const settings = data.settings || {};
+                
+                document.getElementById('currentSettings').innerHTML = `
+                    <strong>頁首間隔:</strong> ${settings.header_interval || 5} 秒<br>
+                    <strong>輪播間隔:</strong> ${settings.carousel_interval || 6} 秒<br>
+                    <strong>頁尾間隔:</strong> ${settings.footer_interval || 7} 秒
+                `;
+                log('設定載入成功', 'success');
+            } catch (error) {
+                log(`載入設定失敗: ${error.message}`, 'error');
+                document.getElementById('currentSettings').innerHTML = '<span class="error">載入失敗</span>';
+            }
+        }
+        
+        async function updateSettings() {
+            const headerInterval = parseInt(document.getElementById('headerInterval').value);
+            const carouselInterval = parseInt(document.getElementById('carouselInterval').value);
+            const footerInterval = parseInt(document.getElementById('footerInterval').value);
+            
+            const settings = {
+                header_interval: headerInterval,
+                carousel_interval: carouselInterval,
+                footer_interval: footerInterval
+            };
+            
+            try {
+                log(`正在更新設定: ${JSON.stringify(settings)}`, 'info');
+                const response = await fetch('/ws/api/settings', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(settings)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const result = await response.json();
+                log('✅ 設定更新成功！等待 WebSocket 通知...', 'success');
+                
+            } catch (error) {
+                log(`❌ 設定更新失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 頁面載入時初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+            fetchCurrentSettings();
+        });
+    </script>
+</body>
+</html>

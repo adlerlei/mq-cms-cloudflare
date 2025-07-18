@@ -351,6 +351,9 @@ function initializeWebSocket() {
         if (data.type === 'playlist_updated' || data.type === 'media_updated') {
           console.log('🔄 媒體更新，重新載入...');
           fetchMediaData().then(updateAllSections);
+        } else if (data.type === 'settings_updated') {
+          console.log('⚙️ 設定更新，重新載入...');
+          fetchMediaData().then(updateAllSections);
         } else if (data.content) {
           // 顯示廣播訊息（如果有廣播訊息元素的話）
           console.log('📢 收到廣播訊息:', data.content);

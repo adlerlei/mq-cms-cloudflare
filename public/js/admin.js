@@ -1187,6 +1187,9 @@ function initializeWebSocket() {
                 if (data.type === 'playlist_updated' || data.type === 'media_updated') {
                     // 重新載入數據
                     getInitialData().then(setState);
+                } else if (data.type === 'settings_updated') {
+                    // 設定更新，重新載入數據
+                    getInitialData().then(setState);
                 }
             } catch (e) {
                 console.error('WebSocket 訊息解析失敗:', e);

@@ -411,6 +411,10 @@ export class MessageBroadcaster {
 			} else if (request.method === 'PUT') {
 				const settings = await request.json() as Settings;
 				await this.saveSettings(settings);
+				
+				// 通知所有客戶端設定已更新
+				this.broadcast(JSON.stringify({ type: 'settings_updated' }));
+				
 				return new Response(JSON.stringify({ success: true }), {
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 				});
