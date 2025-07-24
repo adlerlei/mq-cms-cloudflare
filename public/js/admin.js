@@ -200,17 +200,19 @@ function renderMediaAndAssignments() {
     
     // 添加群組
     appState.groups.forEach(group => {
-        const assignment = appState.assignments.find(a => a.content_id === group.id && a.content_type === 'group_reference');
+        const assignments = appState.assignments.filter(a => a.content_id === group.id && a.content_type === 'group_reference');
         const imageCount = group.materials ? group.materials.length : 0;
         
         let statusText = '在庫，未指派';
         let statusClass = 'is-italic';
         
-        if (assignment) {
-            const sectionName = appState.available_sections[assignment.section_key] || assignment.section_key;
-            const offsetText = assignment.offset && assignment.offset > 0 ? ` (偏移: ${assignment.offset})` : '';
-            statusText = `已指派到: ${sectionName}${offsetText}`;
-            statusClass = 'tag is-success is-light';
+        if (assignments.length > 0) {
+            statusText = assignments.map(assignment => {
+                const sectionName = appState.available_sections[assignment.section_key] || assignment.section_key;
+                const offsetText = assignment.offset && assignment.offset > 0 ? ` (偏移: ${assignment.offset})` : '';
+                return `<span class="tag is-success is-light">${sectionName}${offsetText}</span>`;
+            }).join(' ');
+            statusClass = '';
         }
         
         allItems.push({
