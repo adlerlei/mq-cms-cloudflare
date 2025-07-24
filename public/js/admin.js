@@ -422,6 +422,18 @@ function setupEventHandlers() {
         });
     }
     
+    // 漢堡選單切換功能
+    const navbarBurger = document.querySelector('.navbar-burger');
+    const navbarMenu = document.querySelector('.navbar-menu');
+    
+    if (navbarBurger && navbarMenu) {
+        navbarBurger.addEventListener('click', () => {
+            // 切換 is-active 類別
+            navbarBurger.classList.toggle('is-active');
+            navbarMenu.classList.toggle('is-active');
+        });
+    }
+    
     // Modal 按鈕事件
     const confirmReassignButton = document.getElementById('confirmReassignButton');
     if (confirmReassignButton) {
