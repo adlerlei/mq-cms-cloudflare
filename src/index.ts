@@ -102,9 +102,6 @@ export class MessageBroadcaster {
 				this.broadcastSectionUpdate(sectionKey, 'delete', 'single_media', materialToDelete?.id);
 			});
 			
-			// 通知所有客戶端媒體已更新
-			this.broadcast(JSON.stringify({ type: 'media_updated' }));
-			
 			return new Response(JSON.stringify({ success: true }), {
 				headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 			});
