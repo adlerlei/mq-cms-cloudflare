@@ -88,20 +88,54 @@ export class MessageBroadcaster {
 		} else if (url.pathname.startsWith('/api/materials/') && request.method === 'DELETE') {
 			const filename = decodeURIComponent(url.pathname.replace('/api/materials/', ''));
 			
-			// 在刪除前找出所有使用此媒體的區塊
+			// 在刪除前找出所有使用此媒體的區塊和群組
 			const materials = await this.getMaterials();
 			const materialToDelete = materials.find(m => m.filename === filename || m.id === filename);
 			let affectedSections: string[] = [];
+			let affectedGroups: string[] = [];
 			
 			if (materialToDelete) {
+				// 找出直接指派到區塊的媒體
 				affectedSections = await this.getAffectedSections(materialToDelete.id, 'single_media');
+				
+				// 找出包含此媒體的群組，然後找出這些群組被指派到的區塊
+				const groups = await this.getGroups();
+				for (const group of groups) {
+					if (group.materials && group.materials.some(m => m.id === materialToDelete.id)) {
+						affectedGroups.push(group.id);
+						// 找出使用這個群組的區塊
+						const groupSections = await this.getAffectedSections(group.id, 'group_reference');
+						affectedSections.push(...groupSections);
+					}
+				}
 			}
 			
+			// 刪除材料
 			await this.deleteMaterial(filename);
 			
-			// 為每個受影響的區塊發送刪除通知
-			affectedSections.forEach(sectionKey => {
-				this.broadcastSectionUpdate(sectionKey, 'delete', 'single_media', materialToDelete?.id);
+			// 從包含此材料的群組中移除該材料
+			if (materialToDelete && affectedGroups.length > 0) {
+				const groups = await this.getGroups();
+				for (const groupId of affectedGroups) {
+					const group = groups.find(g => g.id === groupId);
+					if (group && group.materials) {
+						group.materials = group.materials.filter(m => m.id !== materialToDelete.id);
+						await this.updateGroup(groupId, group);
+						console.log(`已從群組 ${group.name} 中移除圖片 ${materialToDelete.filename}`);
+					}
+				}
+			}
+			
+			// 為每個受影響的區塊發送更新通知
+			const uniqueSections = [...new Set(affectedSections)];
+			uniqueSections.forEach(sectionKey => {
+				if (affectedGroups.length > 0) {
+					// 如果涉及群組，發送群組更新通知
+					this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference');
+				} else {
+					// 如果是直接指派的媒體，發送刪除通知
+					this.broadcastSectionUpdate(sectionKey, 'delete', 'single_media', materialToDelete?.id);
+				}
 			});
 			
 			return new Response(JSON.stringify({ success: true }), {
