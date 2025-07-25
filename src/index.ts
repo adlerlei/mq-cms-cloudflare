@@ -272,6 +272,17 @@ export class MessageBroadcaster {
 					});
 				}
 				
+				// 在刪除之前，先找出使用此群組的所有區塊並發送刪除通知
+				const affectedSections = await this.getAffectedSections(groupId, 'group_reference');
+				console.log(`群組 ${groupId} 即將被刪除，受影響的區塊:`, affectedSections);
+				
+				// 先刪除所有相關的指派
+				const assignments = await this.getAssignments();
+				const groupAssignments = assignments.filter(a => a.content_id === groupId && a.content_type === 'group_reference');
+				for (const assignment of groupAssignments) {
+					await this.deleteAssignment(assignment.id);
+				}
+				
 				// 獲取群組信息以取得群組內的材料
 				const groups = await this.getGroups();
 				const targetGroup = groups.find(g => g.id === groupId);
@@ -286,8 +297,11 @@ export class MessageBroadcaster {
 				// 刪除群組本身
 				await this.deleteGroup(groupId);
 				
-			// 群組刪除時，受影響的區塊會在 deleteMaterial 中自動獲得通知
-			// 不需要額外的全域通知
+				// 為每個受影響的區塊發送群組刪除通知
+				affectedSections.forEach(sectionKey => {
+					this.broadcastSectionUpdate(sectionKey, 'delete', 'group_reference', groupId);
+					console.log(`發送群組刪除通知給區塊: ${sectionKey}`);
+				});
 				
 				return new Response(JSON.stringify({ success: true }), {
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
