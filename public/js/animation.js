@@ -370,61 +370,73 @@ function initializeWebSocket() {
       startHeartbeatCheck();
     };
     
+    // 在檔案適當位置定義 debounce（若無，可添加）
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+    
+    // 修改 onmessage
     currentSocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log('📨 收到 WebSocket 訊息:', data);
-        
-        // 更新最後心跳時間（任何訊息都算作心跳）
-        lastHeartbeatTime = Date.now();
-        
-        if (data.type === 'ping') {
-          console.log('🏓 收到伺服器ping，回應pong');
-          // 立即回應pong
-          if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
-            currentSocket.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
-          }
-        } else if (data.type === 'playlist_updated' || data.type === 'media_updated') {
-          console.log('🔄 媒體更新，重新載入...');
-          fetchMediaData().then(updateAllSections);
-        } else if (data.type === 'settings_updated') {
-          settingsUpdateCount++;
-          console.log(`⚙️ 設定更新 #${settingsUpdateCount}，重新載入...`);
-          
-          // 樹莓派特殊處理：強制清除可能的緩存
-          if (isRaspberryPi) {
-            console.log('🍓 檢測到樹莓派環境，使用特殊處理邏輯');
+        try {
+            const data = JSON.parse(event.data);
+            console.log('📨 收到 WebSocket 訊息:', data);
             
-            // 添加隨機參數避免緩存
-            const timestamp = Date.now();
-            const apiUrl = `/api/media_with_settings?t=${timestamp}&rpi=1`;
+            lastHeartbeatTime = Date.now();
             
-            fetch(apiUrl)
-              .then(response => response.json())
-              .then(data => {
-                console.log('🔄 樹莓派專用：強制重新載入數據完成', data);
-                updateAllSections(data);
-              })
-              .catch(error => {
-                console.error('🍓 樹莓派設定更新失敗:', error);
-                // 降級到普通處理
-                fetchMediaData().then(updateAllSections);
-              });
-          } else {
-            // 非樹莓派環境的正常處理
-            fetchMediaData().then(data => {
-              console.log('🔄 因設定更新而重新載入的數據:', data);
-              updateAllSections(data);
-            });
-          }
-        } else if (data.content) {
-          // 顯示廣播訊息（如果有廣播訊息元素的話）
-          console.log('📢 收到廣播訊息:', data.content);
+            if (data.type === 'ping') {
+                console.log('🏓 收到伺服器ping，回應pong');
+                if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
+                    currentSocket.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+                }
+            } else if (data.type === 'playlist_updated' || data.type === 'media_updated' || data.type === 'settings_updated') {
+                debouncedUpdate(data.type);
+            } else if (data.content) {
+                console.log('📢 收到廣播訊息:', data.content);
+            }
+        } catch (error) {
+            console.error('❌ WebSocket 訊息解析失敗:', error);
         }
-      } catch (error) {
-        console.error('❌ WebSocket 訊息解析失敗:', error);
-      }
     };
+    
+    // 定義 debouncedUpdate，根據類型處理
+    let lastUpdateType = '';
+    const debouncedUpdate = debounce((updateType) => {
+        console.log(`🔄 合併更新: ${updateType}`);
+        if (updateType === 'settings_updated') {
+            settingsUpdateCount++;
+            console.log(`⚙️ 設定更新 #${settingsUpdateCount}`);
+            if (isRaspberryPi) {
+                const timestamp = Date.now();
+                const apiUrl = `/api/media_with_settings?t=${timestamp}&rpi=1`;
+                fetch(apiUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('🔄 樹莓派專用：強制重新載入數據完成', data);
+                        updateAllSections(data);
+                    })
+                    .catch(error => {
+                        console.error('🍓 樹莓派設定更新失敗:', error);
+                        fetchMediaData().then(updateAllSections);
+                    });
+            } else {
+                fetchMediaData().then(data => {
+                    console.log('🔄 因設定更新而重新載入的數據:', data);
+                    updateAllSections(data);
+                });
+            }
+        } else {
+            fetchMediaData().then(updateAllSections);
+        }
+        lastUpdateType = updateType;
+    }, 1500);
     
     currentSocket.onclose = (event) => {
       console.log('❌ WebSocket 連接關閉，代碼:', event.code, '原因:', event.reason);
