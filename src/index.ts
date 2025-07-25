@@ -33,6 +33,15 @@ interface Settings {
 	footer_interval: number;
 }
 
+// 新增：區塊更新通知接口
+interface SectionUpdateNotification {
+	type: 'section_updated';
+	section_key: string;
+	action: 'upload' | 'delete' | 'assign' | 'unassign' | 'group_update';
+	content_type?: 'single_media' | 'group_reference';
+	content_id?: string;
+}
+
 // 輔助函數：生成唯一ID
 function generateId(): string {
 	return Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -66,13 +75,36 @@ export class MessageBroadcaster {
 			} else if (request.method === 'POST') {
 				const material = await request.json() as MediaMaterial;
 				await this.saveMaterial(material);
+				
+				// 通知所有客戶端媒體已更新
+				this.broadcast(JSON.stringify({ type: 'media_updated' }));
+				
 				return new Response(JSON.stringify({ success: true }), {
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 				});
 			}
 		} else if (url.pathname.startsWith('/api/materials/') && request.method === 'DELETE') {
 			const filename = decodeURIComponent(url.pathname.replace('/api/materials/', ''));
+			
+			// 在刪除前找出所有使用此媒體的區塊
+			const materials = await this.getMaterials();
+			const materialToDelete = materials.find(m => m.filename === filename || m.id === filename);
+			let affectedSections: string[] = [];
+			
+			if (materialToDelete) {
+				affectedSections = await this.getAffectedSections(materialToDelete.id, 'single_media');
+			}
+			
 			await this.deleteMaterial(filename);
+			
+			// 為每個受影響的區塊發送刪除通知
+			affectedSections.forEach(sectionKey => {
+				this.broadcastSectionUpdate(sectionKey, 'delete', 'single_media', materialToDelete?.id);
+			});
+			
+			// 通知所有客戶端媒體已更新
+			this.broadcast(JSON.stringify({ type: 'media_updated' }));
+			
 			return new Response(JSON.stringify({ success: true }), {
 				headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 			});
@@ -114,8 +146,13 @@ export class MessageBroadcaster {
 					
 					await this.saveAssignment(assignment);
 					
-					// 通知所有客戶端播放列表已更新
-					this.broadcast(JSON.stringify({ type: 'playlist_updated' }));
+					// 發送精確的區塊更新通知
+					this.broadcastSectionUpdate(
+						assignment.section_key, 
+						'assign', 
+						assignment.content_type, 
+						assignment.content_id
+					);
 					
 					return new Response(JSON.stringify({ success: true, assignment }), {
 						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -141,9 +178,23 @@ export class MessageBroadcaster {
 					});
 				}
 				
+				// 取得要被刪除的指派信息以便發送更新通知（必須在刪除前獲取）
+				const assignments = await this.getAssignments();
+				const assignmentToDelete = assignments.find(a => a.id === assignmentId);
+				
 				await this.deleteAssignment(assignmentId);
 				
-				// 通知所有客戶端播放列表已更新
+				if (assignmentToDelete) {
+					// 發送精確的區塊更新通知
+					this.broadcastSectionUpdate(
+						assignmentToDelete.section_key,
+						'unassign',
+						assignmentToDelete.content_type,
+						assignmentToDelete.content_id
+					);
+				}
+				
+				// 通知所有客戶端播放列表已更新（保留向後兼容）
 				this.broadcast(JSON.stringify({ type: 'playlist_updated' }));
 				
 				return new Response(JSON.stringify({ success: true }), {
@@ -191,7 +242,13 @@ export class MessageBroadcaster {
 					
 					await this.saveGroup(group);
 					
-					// 通知所有客戶端群組已更新
+					// 找出使用這個群組的所有區塊並發送更新通知
+					const affectedSections = await this.getAffectedSections(group.id, 'group_reference');
+					affectedSections.forEach(sectionKey => {
+						this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', group.id);
+					});
+					
+					// 通知所有客戶端群組已更新（保留向後兼容）
 					this.broadcast(JSON.stringify({ type: 'groups_updated' }));
 					
 					return new Response(JSON.stringify({ success: true, group }), {
@@ -296,7 +353,13 @@ export class MessageBroadcaster {
 					group.materials = [...(group.materials || []), ...newMaterials];
 					await this.updateGroup(groupId, group);
 					
-					// 通知所有客戶端群組已更新
+					// 找出使用這個群組的所有區塊並發送更新通知
+					const affectedSections = await this.getAffectedSections(groupId, 'group_reference');
+					affectedSections.forEach(sectionKey => {
+						this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', groupId);
+					});
+					
+					// 通知所有客戶端群組已更新（保留向後兼容）
 					this.broadcast(JSON.stringify({ type: 'groups_updated' }));
 					
 					return new Response(JSON.stringify({ success: true, group }), {
@@ -344,7 +407,13 @@ export class MessageBroadcaster {
 					
 					await this.updateGroup(groupId, group);
 					
-					// 通知所有客戶端群組已更新
+					// 找出使用這個群組的所有區塊並發送更新通知
+					const affectedSections = await this.getAffectedSections(groupId, 'group_reference');
+					affectedSections.forEach(sectionKey => {
+						this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', groupId);
+					});
+					
+					// 通知所有客戶端群組已更新（保留向後兼容）
 					this.broadcast(JSON.stringify({ type: 'groups_updated' }));
 					
 					return new Response(JSON.stringify({ success: true, group }), {
@@ -480,6 +549,30 @@ export class MessageBroadcaster {
 				conn.send(message);
 			}
 		}
+	}
+
+	// 新增：廣播區塊更新通知
+	private broadcastSectionUpdate(sectionKey: string, action: string, contentType?: string, contentId?: string) {
+		const notification: SectionUpdateNotification = {
+			type: 'section_updated',
+			section_key: sectionKey,
+			action: action as any,
+			content_type: contentType as any,
+			content_id: contentId
+		};
+		this.broadcast(JSON.stringify(notification));
+		console.log(`📢 廣播區塊更新通知: ${sectionKey} - ${action}`);
+	}
+
+	// 新增：根據指派找出受影響的區塊
+	private async getAffectedSections(contentId: string, contentType: 'single_media' | 'group_reference'): Promise<string[]> {
+		const assignments = await this.getAssignments();
+		return assignments
+			.filter(assignment => 
+				assignment.content_id === contentId && 
+				assignment.content_type === contentType
+			)
+			.map(assignment => assignment.section_key);
 	}
 
 	// 數據存儲方法

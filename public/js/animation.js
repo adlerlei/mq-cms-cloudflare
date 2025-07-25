@@ -396,6 +396,9 @@ function initializeWebSocket() {
                 if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
                     currentSocket.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
                 }
+            } else if (data.type === 'section_updated') {
+                // 處理精細化的區塊更新通知
+                handleSectionUpdate(data);
             } else if (data.type === 'playlist_updated' || data.type === 'media_updated' || data.type === 'settings_updated') {
                 debouncedUpdate(data.type);
             } else if (data.content) {
@@ -437,6 +440,83 @@ function initializeWebSocket() {
         }
         lastUpdateType = updateType;
     }, 1500);
+    
+    // 處理精細化區塊更新的函數
+    function handleSectionUpdate(data) {
+        const { section_key, action, content_type, content_id } = data;
+        console.log(`🎯 收到區塊更新通知: ${section_key} - ${action}`);
+        
+        // 使用防抖動機制來避免短時間內多次更新
+        if (!window.sectionUpdateTimeouts) {
+            window.sectionUpdateTimeouts = {};
+        }
+        
+        // 清除之前的計時器
+        if (window.sectionUpdateTimeouts[section_key]) {
+            clearTimeout(window.sectionUpdateTimeouts[section_key]);
+        }
+        
+        // 設置新的計時器，300ms 後執行更新
+        window.sectionUpdateTimeouts[section_key] = setTimeout(() => {
+            updateSpecificSection(section_key);
+            delete window.sectionUpdateTimeouts[section_key];
+        }, 300);
+    }
+    
+    // 更新特定區塊的函數
+    async function updateSpecificSection(sectionKey) {
+        try {
+            console.log(`🔄 開始更新區塊: ${sectionKey}`);
+            
+            // 獲取最新數據
+            const data = await fetchMediaData();
+            if (!data) {
+                console.warn('無法獲取媒體數據，跳過區塊更新');
+                return;
+            }
+            
+            // 根據區塊類型選擇正確的容器ID和間隔
+            const sectionConfig = {
+                'header_video': {
+                    containerId: 'header-content-container',
+                    interval: (data.settings.header_interval || 5) * 1000
+                },
+                'carousel_top_left': {
+                    containerId: 'carousel-top-left-inner', 
+                    interval: (data.settings.carousel_interval || 6) * 1000
+                },
+                'carousel_top_right': {
+                    containerId: 'carousel-top-right-inner',
+                    interval: (data.settings.carousel_interval || 6) * 1000
+                },
+                'carousel_bottom_left': {
+                    containerId: 'carousel-bottom-left-inner',
+                    interval: (data.settings.carousel_interval || 6) * 1000
+                },
+                'carousel_bottom_right': {
+                    containerId: 'carousel-bottom-right-inner',
+                    interval: (data.settings.carousel_interval || 6) * 1000
+                },
+                'footer_content': {
+                    containerId: 'footer-content-container',
+                    interval: (data.settings.footer_interval || 7) * 1000
+                }
+            };
+            
+            const config = sectionConfig[sectionKey];
+            if (!config) {
+                console.warn(`未知的區塊鍵: ${sectionKey}`);
+                return;
+            }
+            
+            // 更新指定區塊
+            updateSection(sectionKey, data, config.containerId, config.interval);
+            console.log(`✅ 成功更新區塊: ${sectionKey}`);
+            
+        } catch (error) {
+            console.error(`❌ 更新區塊 ${sectionKey} 時發生錯誤:`, error);
+        }
+    }
     
     currentSocket.onclose = (event) => {
       console.log('❌ WebSocket 連接關閉，代碼:', event.code, '原因:', event.reason);
