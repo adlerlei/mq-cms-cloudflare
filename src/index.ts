@@ -76,8 +76,7 @@ export class MessageBroadcaster {
 				const material = await request.json() as MediaMaterial;
 				await this.saveMaterial(material);
 				
-				// 通知所有客戶端媒體已更新
-				this.broadcast(JSON.stringify({ type: 'media_updated' }));
+				// 注意: 這裡不發送全域通知，因為新材料還沒有被指派到任何區塊
 				
 				return new Response(JSON.stringify({ success: true }), {
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -191,8 +190,7 @@ export class MessageBroadcaster {
 					);
 				}
 				
-				// 通知所有客戶端播放列表已更新（保留向後兼容）
-				this.broadcast(JSON.stringify({ type: 'playlist_updated' }));
+				// 精細化通知已在上面發送，不需要全域播放列表更新通知
 				
 				return new Response(JSON.stringify({ success: true }), {
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -245,8 +243,7 @@ export class MessageBroadcaster {
 						this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', group.id);
 					});
 					
-					// 通知所有客戶端群組已更新（保留向後兼容）
-					this.broadcast(JSON.stringify({ type: 'groups_updated' }));
+				// 精細化通知已在上面發送，不需要全域群組更新通知
 					
 					return new Response(JSON.stringify({ success: true, group }), {
 						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -286,8 +283,8 @@ export class MessageBroadcaster {
 				// 刪除群組本身
 				await this.deleteGroup(groupId);
 				
-				// 通知所有客戶端群組已更新
-				this.broadcast(JSON.stringify({ type: 'groups_updated' }));
+			// 群組刪除時，受影響的區塊會在 deleteMaterial 中自動獲得通知
+			// 不需要額外的全域通知
 				
 				return new Response(JSON.stringify({ success: true }), {
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -356,8 +353,8 @@ export class MessageBroadcaster {
 						this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', groupId);
 					});
 					
-					// 通知所有客戶端群組已更新（保留向後兼容）
-					this.broadcast(JSON.stringify({ type: 'groups_updated' }));
+					// 精細化通知已在上面發送，只有真正使用此群組的區塊會收到更新
+					// 不需要全域群組更新通知
 					
 					return new Response(JSON.stringify({ success: true, group }), {
 						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -410,8 +407,8 @@ export class MessageBroadcaster {
 						this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', groupId);
 					});
 					
-					// 通知所有客戶端群組已更新（保留向後兼容）
-					this.broadcast(JSON.stringify({ type: 'groups_updated' }));
+					// 精細化通知已在上面發送，只有真正使用此群組的區塊會收到更新
+					// 不需要全域群組更新通知
 					
 					return new Response(JSON.stringify({ success: true, group }), {
 						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
