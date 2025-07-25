@@ -192,9 +192,20 @@ async function handleGroupImageUpload(event) {
     button.disabled = true;
 
     try {
-        // 1. Upload the images
-        await api.uploadImagesToGroup(groupId, formData);
-
+        // 1. Upload the images using direct API call to avoid individual notifications
+        const response = await fetch(`/api/groups/${groupId}/images`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || '上傳失敗');
+        }
+        
         // 2. Refetch all data to ensure UI consistency
         const data = await api.getInitialData();
         setState({

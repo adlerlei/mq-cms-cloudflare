@@ -6,9 +6,12 @@
 interface MediaMaterial {
 	id: string;
 	filename: string;
+	original_filename?: string;
 	type: 'image' | 'video';
 	url: string;
+	size?: number;
 	uploaded_at: string;
+	group_id?: string; // 標記群組專屬圖片
 }
 
 interface Assignment {
@@ -299,6 +302,8 @@ export class MessageBroadcaster {
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 				});
 			}
+		// 群組圖片上傳處理邏輯將在主 Worker 中處理
+		// 這裡我們不提供上傳端點，因為需要訪問 MEDIA_BUCKET
 		} else if (url.pathname.match(/\/api\/groups\/[^\/]+\/images$/) && request.method === 'PUT') {
 			const groupId = url.pathname.split('/')[3];
 			const requestData = await request.json() as { image_ids: string[] };
@@ -312,6 +317,15 @@ export class MessageBroadcaster {
 					materials.find(m => m.id === id)
 				).filter(Boolean) as MediaMaterial[];
 				await this.updateGroup(groupId, group);
+				
+				// 找出使用這個群組的所有區塊並發送更新通知
+				const affectedSections = await this.getAffectedSections(groupId, 'group_reference');
+				affectedSections.forEach(sectionKey => {
+					this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', groupId);
+				});
+				
+				// 精細化通知已在上面發送，只有真正使用此群組的區塊會收到更新
+				// 不需要全域播放列表更新通知
 			}
 			
 			return new Response(JSON.stringify({ success: true }), {
@@ -842,18 +856,9 @@ export default {
 						body: JSON.stringify(material)
 					}));
 
-					// 通知所有客戶端播放列表已更新
-					try {
-						const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
-						const stub = env.MESSAGE_BROADCASTER.get(id);
-						await stub.fetch(new Request('http://localhost/api/playlist_updated', {
-							method: 'POST',
-							body: JSON.stringify({ type: 'playlist_updated' })
-						}));
-						console.log('📢 Broadcasted playlist_updated message');
-					} catch (broadcastError) {
-						console.log('⚠️ Failed to broadcast playlist update:', broadcastError);
-					}
+					// 注意：這裡不發送全域播放列表更新通知
+					// 因為某些上傳（如群組圖片上傳）不需要立即推播到前端
+					// 具體的通知會在相關的操作完成後發送
 
 					const response = {
 						success: true, 
@@ -923,18 +928,8 @@ export default {
 					method: 'DELETE'
 				}));
 
-				// 通知所有客戶端播放列表已更新
-				try {
-					const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
-					const stub = env.MESSAGE_BROADCASTER.get(id);
-					await stub.fetch(new Request('http://localhost/api/playlist_updated', {
-						method: 'POST',
-						body: JSON.stringify({ type: 'playlist_updated' })
-					}));
-					console.log('📢 Broadcasted playlist_updated message after deletion');
-				} catch (broadcastError) {
-					console.log('⚠️ Failed to broadcast playlist update after deletion:', broadcastError);
-				}
+					// 注意：這裡不發送全域播放列表更新通知
+					// 刪除操作的通知會在具體的刪除操作完成後發送
 
 				return new Response(JSON.stringify({ 
 					success: true, 
@@ -945,6 +940,109 @@ export default {
 				});
 			} catch (error: any) {
 				return new Response(JSON.stringify({ error: 'Delete failed', details: error?.message || 'Unknown error' }), {
+					status: 500,
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+				});
+			}
+		}
+
+		// 處理群組圖片上傳請求
+		if (url.pathname.match(/\/api\/groups\/[^\/]+\/images$/) && request.method === 'POST') {
+			try {
+				const groupId = url.pathname.split('/')[3];
+				const formData = await request.formData();
+				const files = formData.getAll('files') as File[];
+				
+				if (!files || files.length === 0) {
+					return new Response(JSON.stringify({ error: 'No files provided' }), {
+						status: 400,
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				}
+				
+				// 取得 Durable Object 引用
+				const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
+				const stub = env.MESSAGE_BROADCASTER.get(id);
+				
+				// 檢查群組是否存在
+				const groupsResponse = await stub.fetch(new Request('http://localhost/api/groups'));
+				const groups = await groupsResponse.json();
+				const group = groups.find((g: any) => g.id === groupId);
+				if (!group) {
+					return new Response(JSON.stringify({ error: 'Group not found' }), {
+						status: 404,
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					});
+				}
+				
+				const uploadedMaterials: MediaMaterial[] = [];
+				
+				// 處理每個檔案上傳
+				for (const file of files) {
+					if (!file || file.size === 0) continue;
+					
+					// 生成唯一檔案名
+					const timestamp = Date.now();
+					const randomStr = Math.random().toString(36).substring(2, 8);
+					const extension = file.name.split('.').pop() || 'jpg';
+					const uniqueFilename = `group-${groupId}-${timestamp}-${randomStr}.${extension}`;
+					
+					// 上傳到R2
+					await env.MEDIA_BUCKET.put(uniqueFilename, file.stream(), {
+						httpMetadata: {
+							contentType: file.type || 'image/jpeg'
+						}
+					});
+					
+					// 建立媒體材料記錄
+					const material: MediaMaterial = {
+						id: generateId(),
+						filename: uniqueFilename,
+						original_filename: file.name,
+						url: `/media/${uniqueFilename}`,
+						type: getFileType(file.name),
+						size: file.size,
+						uploaded_at: new Date().toISOString(),
+						group_id: groupId // 標記為群組專屬圖片
+					};
+					
+					// 儲存到材料庫
+					await stub.fetch(new Request('http://localhost/api/materials', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(material)
+					}));
+					uploadedMaterials.push(material);
+				}
+				
+				if (uploadedMaterials.length > 0) {
+					// 將上傳的材料添加到群組
+					const addMaterialsFormData = new FormData();
+					addMaterialsFormData.append('action', 'add_materials');
+					uploadedMaterials.forEach(material => {
+						addMaterialsFormData.append('material_ids[]', material.id);
+					});
+					
+					// 呼叫群組材料API
+					await stub.fetch(new Request(`http://localhost/api/groups/${groupId}/materials`, {
+						method: 'POST',
+						body: addMaterialsFormData
+					}));
+				}
+				
+				return new Response(JSON.stringify({
+					success: true,
+					uploaded_count: uploadedMaterials.length,
+					materials: uploadedMaterials
+				}), {
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+				});
+			} catch (error: any) {
+				console.error('Error uploading images to group:', error);
+				return new Response(JSON.stringify({
+					error: 'Failed to upload images to group',
+					details: error.message
+				}), {
 					status: 500,
 					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
 				});

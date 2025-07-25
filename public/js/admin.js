@@ -871,49 +871,30 @@ async function handleGroupImageUpload() {
     if (groupUploadProgress) groupUploadProgress.style.display = 'block';
     
     try {
-        // 逐個上傳檔案到媒體庫
-        const uploadedMaterials = [];
+			// 使用專門的群組圖片上傳API，避免個別上傳通知
+			const uploadFormData = new FormData();
+			for (const file of files) {
+				uploadFormData.append('files', file);
+			}
+			
+			const response = await fetch(`/api/groups/${groupId}/images`, {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+				},
+				body: uploadFormData
+			});
+			
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || '上傳失敗');
+			}
+			
+			const uploadResult = await response.json();
+			const uploadedMaterials = uploadResult.materials || [];
         
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            const response = await fetch('/api/media', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
-                },
-                body: formData
-            });
-            
-            if (!response.ok) {
-                throw new Error(`上傳 ${file.name} 失敗`);
-            }
-            
-            const result = await response.json();
-            if (result.success && result.material) {
-                uploadedMaterials.push(result.material);
-            }
-        }
-        
-        // 將上傳的圖片加入群組
-        if (uploadedMaterials.length > 0) {
-            const groupUpdateFormData = new FormData();
-            groupUpdateFormData.append('action', 'add_materials');
-            uploadedMaterials.forEach(material => {
-                groupUpdateFormData.append('material_ids[]', material.id);
-            });
-            
-            const groupResponse = await fetch(`/ws/api/groups/${groupId}/materials`, {
-                method: 'POST',
-                body: groupUpdateFormData
-            });
-            
-            if (!groupResponse.ok) {
-                const errorData = await groupResponse.json();
-                throw new Error(errorData.error || '將圖片加入群組失敗');
-            }
+			// 圖片已經在專門的API中加入群組，不需要額外處理
+			if (uploadedMaterials.length > 0) {
             
             // 立即更新UI - 添加新上傳的圖片到已選列表
             const selectedList = document.getElementById('selectedImagesList');
