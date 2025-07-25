@@ -92,7 +92,7 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
 
 
 // 更新所有區塊
-function updateAllSections(data) {
+function updateAllSections(data, verbose = false) {
   const { assignments, materials, groups, settings, available_sections } = data;
   
   // 設定輪播間隔
@@ -101,15 +101,18 @@ function updateAllSections(data) {
     carousel_interval: settings.carousel_interval !== undefined ? parseInt(settings.carousel_interval, 10) * 1000 : DEFAULT_INTERVALS.carousel_interval,
     footer_interval: settings.footer_interval !== undefined ? parseInt(settings.footer_interval, 10) * 1000 : DEFAULT_INTERVALS.footer_interval
   };
-  console.log("當前使用的輪播間隔 (毫秒):", currentIntervals);
+  
+  if (verbose) {
+    console.log("當前使用的輪播間隔 (毫秒):", currentIntervals);
+  }
 
   // 更新所有區塊
-  updateSection('header_video', data, 'header-content-container', currentIntervals.header_interval);
-  updateSection('carousel_top_left', data, 'carousel-top-left-inner', currentIntervals.carousel_interval);
-  updateSection('carousel_top_right', data, 'carousel-top-right-inner', currentIntervals.carousel_interval);
-  updateSection('carousel_bottom_left', data, 'carousel-bottom-left-inner', currentIntervals.carousel_interval);
-  updateSection('carousel_bottom_right', data, 'carousel-bottom-right-inner', currentIntervals.carousel_interval);
-  updateSection('footer_content', data, 'footer-content-container', currentIntervals.footer_interval);
+  updateSection('header_video', data, 'header-content-container', currentIntervals.header_interval, verbose);
+  updateSection('carousel_top_left', data, 'carousel-top-left-inner', currentIntervals.carousel_interval, verbose);
+  updateSection('carousel_top_right', data, 'carousel-top-right-inner', currentIntervals.carousel_interval, verbose);
+  updateSection('carousel_bottom_left', data, 'carousel-bottom-left-inner', currentIntervals.carousel_interval, verbose);
+  updateSection('carousel_bottom_right', data, 'carousel-bottom-right-inner', currentIntervals.carousel_interval, verbose);
+  updateSection('footer_content', data, 'footer-content-container', currentIntervals.footer_interval, verbose);
 }
 
 // 獲取媒體數據和設定
@@ -147,7 +150,7 @@ function getFileType(filename) {
 }
 
 // 核心渲染函式：更新指定區塊
-function updateSection(sectionKey, data, containerId, slideInterval) {
+function updateSection(sectionKey, data, containerId, slideInterval, verbose = false) {
   try {
     const { assignments, materials, groups } = data;
     
@@ -190,7 +193,9 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     const sectionAssignments = assignments.filter(assignment => assignment.section_key === sectionKey);
     
     if (sectionAssignments.length === 0) {
-      console.log(`沒有找到區塊 ${sectionKey} 的指派資料。`);
+      if (verbose) {
+        console.log(`區塊 ${sectionKey} 沒有有效的內容。`);
+      }
       return;
     }
     
@@ -234,7 +239,9 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     });
     
     if (contentItems.length === 0) {
-      console.log(`區塊 ${sectionKey} 沒有有效的內容。`);
+      if (verbose) {
+        console.log(`區塊 ${sectionKey} 沒有有效的內容。`);
+      }
       return;
     }
     
@@ -310,9 +317,13 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     // 初始化輪播
     if (contentItems.length > 0 && slideInterval > 0) {
       initializeGenericCarousel(wrapperToInitialize, slideInterval, carouselOffset);
-      console.log(`區塊 ${sectionKey} 已啟用輪播，間隔 ${slideInterval / 1000} 秒，項目數: ${contentItems.length}，偏移量: ${carouselOffset}`);
+      if (verbose) {
+        console.log(`區塊 ${sectionKey} 已啟用輪播，間隔 ${slideInterval / 1000} 秒，項目數: ${contentItems.length}，偏移量: ${carouselOffset}`);
+      }
     } else if (contentItems.length === 1) {
-      console.log(`區塊 ${sectionKey} 顯示單一內容。`);
+      if (verbose) {
+        console.log(`區塊 ${sectionKey} 顯示單一內容。`);
+      }
       // 確保單一影片播放
       const singleVideo = targetInnerCarousel.querySelector('video');
       if (singleVideo) {
@@ -411,7 +422,16 @@ function initializeWebSocket() {
     
     // 定義 debouncedUpdate，根據類型處理
     let lastUpdateType = '';
+    let recentSectionUpdates = new Set();
+    
     const debouncedUpdate = debounce((updateType) => {
+        // 如果最近有精細化區塊更新，跳過某些全域更新以避免重複
+        if ((updateType === 'playlist_updated' || updateType === 'media_updated') && recentSectionUpdates.size > 0) {
+            console.log(`⏭️ 跳過全域更新 ${updateType}，因為剛完成精細化區塊更新`);
+            recentSectionUpdates.clear();
+            return;
+        }
+        
         console.log(`🔄 合併更新: ${updateType}`);
         if (updateType === 'settings_updated') {
             settingsUpdateCount++;
@@ -423,20 +443,20 @@ function initializeWebSocket() {
                     .then(response => response.json())
                     .then(data => {
                         console.log('🔄 樹莓派專用：強制重新載入數據完成', data);
-                        updateAllSections(data);
+                        updateAllSections(data, true); // 傳遞 verbose 參數
                     })
                     .catch(error => {
                         console.error('🍓 樹莓派設定更新失敗:', error);
-                        fetchMediaData().then(updateAllSections);
+                        fetchMediaData().then(data => updateAllSections(data, true));
                     });
             } else {
                 fetchMediaData().then(data => {
                     console.log('🔄 因設定更新而重新載入的數據:', data);
-                    updateAllSections(data);
+                    updateAllSections(data, true); // 傳遞 verbose 參數
                 });
             }
         } else {
-            fetchMediaData().then(updateAllSections);
+            fetchMediaData().then(data => updateAllSections(data, true)); // 傳遞 verbose 參數
         }
         lastUpdateType = updateType;
     }, 1500);
@@ -445,6 +465,9 @@ function initializeWebSocket() {
     function handleSectionUpdate(data) {
         const { section_key, action, content_type, content_id } = data;
         console.log(`🎯 收到區塊更新通知: ${section_key} - ${action}`);
+        
+        // 記錄最近的精細化更新，用於防止重複的全域更新
+        recentSectionUpdates.add(section_key);
         
         // 使用防抖動機制來避免短時間內多次更新
         if (!window.sectionUpdateTimeouts) {
@@ -509,8 +532,8 @@ function initializeWebSocket() {
                 return;
             }
             
-            // 更新指定區塊
-            updateSection(sectionKey, data, config.containerId, config.interval);
+            // 更新指定區塊（精細化更新，不顯示詳細日誌）
+            updateSection(sectionKey, data, config.containerId, config.interval, false);
             console.log(`✅ 成功更新區塊: ${sectionKey}`);
             
         } catch (error) {
@@ -574,7 +597,7 @@ function startHeartbeatCheck() {
 document.addEventListener("DOMContentLoaded", () => {
   console.log('🎬 頁面載入完成，開始初始化...');
   
-  fetchMediaData().then(updateAllSections);
+  fetchMediaData().then(data => updateAllSections(data, true));
   initializeWebSocket();
   
   // 樹莓派特殊處理：防止瀏覽器進入休眠狀態
