@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* 避免極端情況下出現捲軸 */
+        }
+    </style>
+</head>
+<body>
+    <div class="h-full w-screen flex flex-col bg-black">
+
+        <div class="h-[32.3vh] relative">
+            <video src="images/MQAD.mp4" 
+                   class="absolute w-full h-full object-cover" 
+                   autoplay loop muted playsinline></video>
+        </div>
+
+        <div class="flex-1 flex flex-col">
+            <div class="flex-1 flex">
+                <div class="flex-1 relative">
+                    <img src="images/BMW.jpg" 
+                         class="absolute w-full h-full object-cover">
+                </div>
+                <div class="flex-1 relative">
+                    <img src="images/hollywood.jpg" 
+                         class="absolute w-full h-full object-cover">
+                </div>
+            </div>
+            <div class="flex-1 flex">
+                <div class="flex-1 relative">
+                    <img src="images/佑名駕訓班.jpg" 
+                         class="absolute w-full h-full object-cover">
+                </div>
+                <div class="flex-1 relative">
+                    <img src="images/智鴻數位科技.jpg" 
+                         class="absolute w-full h-full object-cover">
+                </div>
+            </div>
+        </div>
+
+        <div class="h-[10vh] relative">
+            <video src="images/footer.mp4" 
+                   class="absolute w-full h-full object-cover" 
+                   autoplay loop muted playsinline></video>
+        </div>
+
+    </div>
+</body>
+</html>
