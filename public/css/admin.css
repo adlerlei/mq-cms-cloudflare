@@ -130,3 +130,21 @@
     font-style: italic;
     padding: 20px;
 }
+
+
+/* 響應式導航欄優化 */
+@media screen and (max-width: 1023px) {
+    .navbar-menu {
+        box-shadow: 0 8px 16px rgba(10, 10, 10, 0.1);
+    }
+    
+    .navbar-item {
+        padding: 0.75rem 1rem;
+    }
+}
+
+/* 確保漢堡選單在小螢幕上可見 */
+.navbar-burger {
+    height: 3.25rem;
+    width: 3.25rem;
+}

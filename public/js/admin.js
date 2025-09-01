@@ -200,17 +200,19 @@ function renderMediaAndAssignments() {
     
     // 添加群組
     appState.groups.forEach(group => {
-        const assignment = appState.assignments.find(a => a.content_id === group.id && a.content_type === 'group_reference');
+        const assignments = appState.assignments.filter(a => a.content_id === group.id && a.content_type === 'group_reference');
         const imageCount = group.materials ? group.materials.length : 0;
         
         let statusText = '在庫，未指派';
         let statusClass = 'is-italic';
         
-        if (assignment) {
-            const sectionName = appState.available_sections[assignment.section_key] || assignment.section_key;
-            const offsetText = assignment.offset && assignment.offset > 0 ? ` (偏移: ${assignment.offset})` : '';
-            statusText = `已指派到: ${sectionName}${offsetText}`;
-            statusClass = 'tag is-success is-light';
+        if (assignments.length > 0) {
+            statusText = assignments.map(assignment => {
+                const sectionName = appState.available_sections[assignment.section_key] || assignment.section_key;
+                const offsetText = assignment.offset && assignment.offset > 0 ? ` (偏移: ${assignment.offset})` : '';
+                return `<span class="tag is-success is-light">${sectionName}${offsetText}</span>`;
+            }).join(' ');
+            statusClass = '';
         }
         
         allItems.push({
@@ -419,6 +421,18 @@ function setupEventHandlers() {
         logoutButton.addEventListener('click', () => {
             localStorage.removeItem('jwt_token');
             window.location.href = '/login.html';
+        });
+    }
+    
+    // 漢堡選單切換功能
+    const navbarBurger = document.querySelector('.navbar-burger');
+    const navbarMenu = document.querySelector('.navbar-menu');
+    
+    if (navbarBurger && navbarMenu) {
+        navbarBurger.addEventListener('click', () => {
+            // 切換 is-active 類別
+            navbarBurger.classList.toggle('is-active');
+            navbarMenu.classList.toggle('is-active');
         });
     }
     
@@ -857,49 +871,30 @@ async function handleGroupImageUpload() {
     if (groupUploadProgress) groupUploadProgress.style.display = 'block';
     
     try {
-        // 逐個上傳檔案到媒體庫
-        const uploadedMaterials = [];
+			// 使用專門的群組圖片上傳API，避免個別上傳通知
+			const uploadFormData = new FormData();
+			for (const file of files) {
+				uploadFormData.append('files', file);
+			}
+			
+			const response = await fetch(`/api/groups/${groupId}/images`, {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+				},
+				body: uploadFormData
+			});
+			
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || '上傳失敗');
+			}
+			
+			const uploadResult = await response.json();
+			const uploadedMaterials = uploadResult.materials || [];
         
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            const response = await fetch('/api/media', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
-                },
-                body: formData
-            });
-            
-            if (!response.ok) {
-                throw new Error(`上傳 ${file.name} 失敗`);
-            }
-            
-            const result = await response.json();
-            if (result.success && result.material) {
-                uploadedMaterials.push(result.material);
-            }
-        }
-        
-        // 將上傳的圖片加入群組
-        if (uploadedMaterials.length > 0) {
-            const groupUpdateFormData = new FormData();
-            groupUpdateFormData.append('action', 'add_materials');
-            uploadedMaterials.forEach(material => {
-                groupUpdateFormData.append('material_ids[]', material.id);
-            });
-            
-            const groupResponse = await fetch(`/ws/api/groups/${groupId}/materials`, {
-                method: 'POST',
-                body: groupUpdateFormData
-            });
-            
-            if (!groupResponse.ok) {
-                const errorData = await groupResponse.json();
-                throw new Error(errorData.error || '將圖片加入群組失敗');
-            }
+			// 圖片已經在專門的API中加入群組，不需要額外處理
+			if (uploadedMaterials.length > 0) {
             
             // 立即更新UI - 添加新上傳的圖片到已選列表
             const selectedList = document.getElementById('selectedImagesList');
@@ -1169,43 +1164,116 @@ function checkAuthentication() {
     return true;
 }
 
+// WebSocket 相關變數
+let adminCurrentSocket = null;
+let adminLastHeartbeatTime = 0;
+let adminHeartbeatCheckTimer = null;
+const ADMIN_HEARTBEAT_TIMEOUT = 65000; // 65秒，略長於兩個ping週期(30秒*2)
+const ADMIN_RECONNECT_DELAY = 5000; // 5秒重連延遲
+
 // WebSocket 初始化
 function initializeWebSocket() {
     try {
+        // 清理舊的連接和計時器
+        if (adminCurrentSocket) {
+            adminCurrentSocket.close();
+            adminCurrentSocket = null;
+        }
+        if (adminHeartbeatCheckTimer) {
+            clearTimeout(adminHeartbeatCheckTimer);
+            adminHeartbeatCheckTimer = null;
+        }
+
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
         
-        const socket = new WebSocket(wsUrl);
+        console.log('🔌 管理頁面正在連接 WebSocket:', wsUrl);
         
-        socket.onopen = () => {
-            console.log('WebSocket 連接成功');
+        adminCurrentSocket = new WebSocket(wsUrl);
+        
+        adminCurrentSocket.onopen = () => {
+            console.log('✅ 管理頁面 WebSocket 連接成功');
+            adminLastHeartbeatTime = Date.now();
+            startAdminHeartbeatCheck();
         };
         
-        socket.onmessage = (event) => {
+        adminCurrentSocket.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                if (data.type === 'playlist_updated' || data.type === 'media_updated') {
+                console.log('📨 管理頁面收到 WebSocket 訊息:', data);
+                
+                // 更新最後心跳時間（任何訊息都算作心跳）
+                adminLastHeartbeatTime = Date.now();
+                
+                if (data.type === 'ping') {
+                    console.log('🏓 管理頁面收到伺服器ping，回應pong');
+                    // 立即回應pong
+                    if (adminCurrentSocket && adminCurrentSocket.readyState === WebSocket.OPEN) {
+                        adminCurrentSocket.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+                    }
+                } else if (data.type === 'playlist_updated' || data.type === 'media_updated') {
                     // 重新載入數據
+                    getInitialData().then(setState);
+                } else if (data.type === 'settings_updated') {
+                    // 設定更新，重新載入數據
                     getInitialData().then(setState);
                 }
             } catch (e) {
-                console.error('WebSocket 訊息解析失敗:', e);
+                console.error('管理頁面 WebSocket 訊息解析失敗:', e);
             }
         };
         
-        socket.onclose = () => {
-            console.log('WebSocket 連接關閉');
-            // 5秒後重新連接
-            setTimeout(initializeWebSocket, 5000);
+        adminCurrentSocket.onclose = (event) => {
+            console.log('❌ 管理頁面 WebSocket 連接關閉，代碼:', event.code, '原因:', event.reason);
+            adminCurrentSocket = null;
+            
+            // 停止心跳檢查
+            if (adminHeartbeatCheckTimer) {
+                clearTimeout(adminHeartbeatCheckTimer);
+                adminHeartbeatCheckTimer = null;
+            }
+            
+            // 延遲重新連接
+            console.log(`⏰ 管理頁面 ${ADMIN_RECONNECT_DELAY/1000}秒後重新連接...`);
+            setTimeout(initializeWebSocket, ADMIN_RECONNECT_DELAY);
         };
         
-        socket.onerror = (error) => {
-            console.error('WebSocket 錯誤:', error);
+        adminCurrentSocket.onerror = (error) => {
+            console.error('❌ 管理頁面 WebSocket 錯誤:', error);
         };
         
     } catch (error) {
-        console.error('WebSocket 初始化失敗:', error);
+        console.error('管理頁面 WebSocket 初始化失敗:', error);
+        // 如果初始化失敗，也要重試
+        setTimeout(initializeWebSocket, ADMIN_RECONNECT_DELAY);
     }
+}
+
+// 開始管理頁面心跳檢查
+function startAdminHeartbeatCheck() {
+    // 清理舊的計時器
+    if (adminHeartbeatCheckTimer) {
+        clearTimeout(adminHeartbeatCheckTimer);
+    }
+    
+    adminHeartbeatCheckTimer = setTimeout(() => {
+        const timeSinceLastHeartbeat = Date.now() - adminLastHeartbeatTime;
+        
+        if (timeSinceLastHeartbeat > ADMIN_HEARTBEAT_TIMEOUT) {
+            console.warn(`⚠️ 管理頁面心跳超時 (${timeSinceLastHeartbeat}ms > ${ADMIN_HEARTBEAT_TIMEOUT}ms)，主動重連`);
+            
+            // 主動關閉連接並重新連接
+            if (adminCurrentSocket) {
+                adminCurrentSocket.close(1000, 'Heartbeat timeout');
+            } else {
+                // 如果socket已經不存在，直接重連
+                initializeWebSocket();
+            }
+        } else {
+            // 繼續下一次檢查
+            startAdminHeartbeatCheck();
+        }
+    }, ADMIN_HEARTBEAT_TIMEOUT);
 }
 
 // 拖拽排序功能

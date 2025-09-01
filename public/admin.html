@@ -19,12 +19,28 @@
 
     <!-- 主要內容 -->
     <div id="mainContent" class="main-content">
-        <nav class="navbar is-primary" role="navigation">
+        <nav class="navbar is-primary" role="navigation" aria-label="main navigation">
             <div class="container">
-                <div class="navbar-brand"><a class="navbar-item has-text-weight-bold" href="#">MQ 內容管理系統</a></div>
-                <div class="navbar-menu"><div class="navbar-end"><div class="navbar-item"><div class="buttons">
-                    <button id="logoutButton" class="button is-primary is-light">登出</button>
-                </div></div></div></div>
+                <div class="navbar-brand">
+                    <a class="navbar-item has-text-weight-bold" href="#">MQ 內容管理系統</a>
+                    
+                    <!-- 漢堡選單按鈕 -->
+                    <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarMenu">
+                        <span aria-hidden="true"></span>
+                        <span aria-hidden="true"></span>
+                        <span aria-hidden="true"></span>
+                    </a>
+                </div>
+                
+                <div id="navbarMenu" class="navbar-menu">
+                    <div class="navbar-end">
+                        <div class="navbar-item">
+                            <div class="buttons">
+                                <button id="logoutButton" class="button is-primary is-light">登出</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </nav>
     <section class="section">
