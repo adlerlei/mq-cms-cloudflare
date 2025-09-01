@@ -94,31 +94,29 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
 function updateAllSections(data, verbose = false) {
   const { assignments, materials, groups, settings, available_sections } = data;
 
-  // 輔助函式：計算一個區塊實際可播放的項目數量
   const countItemsInSection = (sectionKey) => {
     let count = 0;
     const sectionAssignments = assignments.filter(a => a.section_key === sectionKey);
-    
     sectionAssignments.forEach(assignment => {
       if (assignment.content_type === 'single_media') {
-        if (materials.some(m => m.id === assignment.content_id)) {
-          count++;
-        }
+        if (materials.some(m => m.id === assignment.content_id)) count++;
       } else if (assignment.content_type === 'group_reference') {
         const group = groups.find(g => g.id === assignment.content_id);
-        if (group && group.materials && group.materials.length > 0) {
-          count += group.materials.length;
-        }
+        if (group && group.materials && group.materials.length > 0) count += group.materials.length;
       }
     });
     return count;
   };
 
-  // 設定輪播間隔
+  const getInterval = (value, defaultValue) => {
+    const parsed = parseInt(value, 10);
+    return isNaN(parsed) ? defaultValue : parsed * 1000;
+  };
+
   const currentIntervals = {
-    header_interval: settings.header_interval !== undefined ? parseInt(settings.header_interval, 10) * 1000 : DEFAULT_INTERVALS.header_interval,
-    carousel_interval: settings.carousel_interval !== undefined ? parseInt(settings.carousel_interval, 10) * 1000 : DEFAULT_INTERVALS.carousel_interval,
-    footer_interval: settings.footer_interval !== undefined ? parseInt(settings.footer_interval, 10) * 1000 : DEFAULT_INTERVALS.footer_interval
+    header_interval: getInterval(settings.header_interval, DEFAULT_INTERVALS.header_interval),
+    carousel_interval: getInterval(settings.carousel_interval, DEFAULT_INTERVALS.carousel_interval),
+    footer_interval: getInterval(settings.footer_interval, DEFAULT_INTERVALS.footer_interval)
   };
   
   if (verbose) {
@@ -138,24 +136,20 @@ function updateAllSections(data, verbose = false) {
   const topLeftItemCount = countItemsInSection('carousel_top_left');
   const topRightItemCount = countItemsInSection('carousel_top_right');
   
-  console.log(`偵錯：上左項目數: ${topLeftItemCount}`);
-  console.log(`偵錯：上右項目數: ${topRightItemCount}`);
-
   const topLeftSlot = document.getElementById('slot-top-left');
   const topRightSlot = document.getElementById('slot-top-right');
 
   if (topLeftSlot && topRightSlot) {
-      // 最終規則：如果上左的項目 > 0，且上右的項目 == 0
       if (topLeftItemCount > 0 && topRightItemCount === 0) {
-          console.log("版面規則觸發：切換為全寬版面。");
-          topRightSlot.classList.add('hidden');
-          topLeftSlot.classList.remove('flex-1');
-          topLeftSlot.classList.add('w-full');
+          console.log("版面規則觸發：[最終相容模式] 切換為全寬版面。");
+          topRightSlot.style.display = 'none';
+          topLeftSlot.style.flex = 'none';
+          topLeftSlot.style.width = '100%';
       } else {
-          console.log("版面規則：套用預設的左右兩格版面。");
-          topRightSlot.classList.remove('hidden');
-          topLeftSlot.classList.add('flex-1');
-          topLeftSlot.classList.remove('w-full');
+          console.log("版面規則：[最終相容模式] 套用預設的左右兩格版面。");
+          topRightSlot.style.display = 'block'; // 【修改點】明確設為 block (div 的預設)
+          topLeftSlot.style.flex = '1 1 0%';    // 【修改點】明確還原 flex-1 的完整寫法
+          topLeftSlot.style.width = '';         // 讓 flex 重新接管寬度
       }
   }
   // =================================================================
@@ -363,10 +357,8 @@ function initializeWebSocket() {
                 if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
                     currentSocket.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
                 }
-            } else if (data.type === 'section_updated') {
-                // 處理精細化的區塊更新通知
-                handleSectionUpdate(data);
-            } else if (data.type === 'playlist_updated' || data.type === 'media_updated' || data.type === 'settings_updated') {
+            } else if (data.type === 'section_updated' || data.type === 'playlist_updated' || data.type === 'media_updated' || data.type === 'settings_updated') {
+                // 【最終修正】這裡就是唯一的判斷式，處理所有更新類型
                 debouncedUpdate(data.type);
             } else if (data.content) {
                 console.log('📢 收到廣播訊息:', data.content);
@@ -454,30 +446,30 @@ function initializeWebSocket() {
                 return;
             }
             
-            // 根據區塊類型選擇正確的容器ID和間隔
+            // 【核心修正】將這裡的 containerId 更新為新的 ID
             const sectionConfig = {
                 'header_video': {
-                    containerId: 'header-content-container',
+                    containerId: 'header-container', 
                     interval: (data.settings.header_interval || 5) * 1000
                 },
                 'carousel_top_left': {
-                    containerId: 'carousel-top-left-inner', 
+                    containerId: 'slot-top-left', 
                     interval: (data.settings.carousel_interval || 6) * 1000
                 },
                 'carousel_top_right': {
-                    containerId: 'carousel-top-right-inner',
+                    containerId: 'slot-top-right',
                     interval: (data.settings.carousel_interval || 6) * 1000
                 },
                 'carousel_bottom_left': {
-                    containerId: 'carousel-bottom-left-inner',
+                    containerId: 'slot-bottom-left',
                     interval: (data.settings.carousel_interval || 6) * 1000
                 },
                 'carousel_bottom_right': {
-                    containerId: 'carousel-bottom-right-inner',
+                    containerId: 'slot-bottom-right',
                     interval: (data.settings.carousel_interval || 6) * 1000
                 },
                 'footer_content': {
-                    containerId: 'footer-content-container',
+                    containerId: 'footer-container',
                     interval: (data.settings.footer_interval || 7) * 1000
                 }
             };
