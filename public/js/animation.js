@@ -158,8 +158,9 @@ function updateAllSections(data, verbose = false) {
 // 獲取媒體數據和設定
 async function fetchMediaData() {
   try {
-    // 獲取完整的媒體資料包含指派、素材、群組和設定
-    const response = await fetch(`${SERVER_BASE_URL}/api/media_with_settings`);
+    // 【最終修正】在網址後面加上時間戳，強制破解瀏覽器快取
+    const apiUrl = `${SERVER_BASE_URL}/api/media_with_settings?t=${Date.now()}`;
+    const response = await fetch(apiUrl);
     if (!response.ok) {
       throw new Error(`獲取媒體資料失敗: ${response.status} ${response.statusText}`);
     }
