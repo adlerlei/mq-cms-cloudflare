@@ -7,87 +7,112 @@ const DEFAULT_INTERVALS = {
   footer_interval: 7000    // 頁尾預設 7 秒
 };
 
-// 輔助函數：初始化通用輪播動畫
+// New, improved version of initializeGenericCarousel
 function initializeGenericCarousel(containerElement, slideInterval, startOffset = 0) {
   if (!containerElement) {
-    console.warn("initializeGenericCarousel: 傳入的容器元素為 null");
+    console.warn("initializeGenericCarousel: Container element is null.");
     return;
   }
   const inner = containerElement.querySelector(".carousel-inner");
   if (!inner) {
-    // console.warn(`initializeGenericCarousel: 在容器 ${containerElement.id || '未命名容器'} 中找不到 .carousel-inner`);
     return;
   }
   const items = inner.querySelectorAll(".carousel-item");
 
+  // Clear any existing timer
   if (containerElement.slideTimer) {
-    clearInterval(containerElement.slideTimer);
+    clearTimeout(containerElement.slideTimer);
     containerElement.slideTimer = null;
   }
 
+  // if (items.length <= 1) {
+  //   inner.style.transition = "none";
+  //   inner.style.transform = "translateX(0)";
+  //   if (items.length === 1) {
+  //       const media = items[0].querySelector('video, img');
+  //       if (media && media.tagName === 'VIDEO') {
+  //           media.play().catch(e => console.warn("Single video playback failed:", e));
+  //       }
+  //   }
+  //   return;
+  // }
+  // 【核心修改區域】
   if (items.length <= 1) {
     inner.style.transition = "none";
     inner.style.transform = "translateX(0)";
-    inner.querySelectorAll('.cloned-item').forEach(clone => clone.remove());
-    // 如果只有一個影片，確保它播放
     if (items.length === 1) {
-        const singleVideo = items[0].querySelector('video');
-        if (singleVideo) {
-            singleVideo.play().catch(e => {
-                if (e.name !== 'AbortError') { // AbortError 通常是瀏覽器因用戶未互動而阻止自動播放
-                    console.warn(`單一影片 ${singleVideo.src} 自動播放失敗:`, e.name, e.message);
-                }
-            });
-        }
+      const media = items[0].querySelector('video, img');
+      if (media && media.tagName === 'VIDEO') {
+        // 如果只有一個影片，就讓它自己循環播放
+        media.loop = true; 
+        media.play().catch(e => console.warn("Single video playback failed:", e));
+      }
     }
-    return;
+    return; // 處理完單一項目的情況後，直接
   }
 
+  let currentIndex = Math.max(0, Math.min(startOffset, items.length - 1));
   inner.style.transition = "none";
-  
-  // 計算起始索引，確保不超出範圍
-  let currentIndex = Math.min(startOffset, items.length - 1);
-  if (currentIndex < 0) currentIndex = 0;
-  
-  // 設定初始位置
   inner.style.transform = `translateX(-${currentIndex * 100}%)`;
-  
-  console.log(`輪播初始化：總共 ${items.length} 個項目，從第 ${currentIndex + 1} 個開始 (偏移量: ${startOffset})`);
-  
-  inner.querySelectorAll('.cloned-item').forEach(clone => clone.remove());
 
-  const firstClone = items[0].cloneNode(true);
-  firstClone.classList.add('cloned-item');
-  inner.appendChild(firstClone);
-  
-  // 確保複製後的項目也能正確顯示，特別是影片
-  const clonedVideo = firstClone.querySelector('video');
-  if (clonedVideo) {
-    clonedVideo.muted = true; // 複製的影片也應靜音
-    clonedVideo.playsInline = true;
-    // clonedVideo.play().catch(e => console.warn("Cloned video play failed:", e)); // 通常不需要複製的影片自動播放
-  }
+  let playerTimeout;
 
+  function playNext() {
+    // Clear previous timeout or listeners to prevent conflicts
+    if (playerTimeout) clearTimeout(playerTimeout);
+    
+    // Deactivate previous item's listeners
+    const prevItem = items[currentIndex % items.length];
+    const prevVideo = prevItem.querySelector('video');
+    if (prevVideo) {
+        prevVideo.removeEventListener('ended', playNext);
+        // Pause it to be safe, unless it's set to loop
+        if (!prevVideo.loop) prevVideo.pause();
+    }
 
-  let isResetting = false;
-
-  const slide = () => {
-    if (isResetting) return;
     currentIndex++;
+    
     inner.style.transition = "transform 0.5s ease";
     inner.style.transform = `translateX(-${currentIndex * 100}%)`;
 
-    if (currentIndex === items.length) {
-      isResetting = true;
-      setTimeout(() => {
-        inner.style.transition = "none";
-        inner.style.transform = "translateX(0)";
-        currentIndex = 0;
-        isResetting = false;
-      }, 500);
+    // Reset loop if needed
+    inner.addEventListener('transitionend', () => {
+        if (currentIndex >= items.length) {
+            inner.style.transition = 'none';
+            currentIndex = 0;
+            inner.style.transform = `translateX(0%)`;
+            // After resetting, immediately trigger the logic for the first item
+            setTimeout(playCurrent, 20); // Small delay to ensure render
+        }
+    }, { once: true });
+    
+    playCurrent();
+  }
+
+  function playCurrent() {
+    const currentItem = items[currentIndex % items.length];
+    const mediaElement = currentItem.querySelector('video, img');
+
+    if (mediaElement && mediaElement.tagName === 'VIDEO') {
+      mediaElement.currentTime = 0;
+      mediaElement.play().then(() => {
+        console.log(`Playing video: ${mediaElement.src}`);
+        // When video ends, play the next slide
+        mediaElement.addEventListener('ended', playNext, { once: true });
+      }).catch(e => {
+        console.warn(`Video playback failed for ${mediaElement.src}:`, e);
+        // If playback fails, switch to next after a short delay
+        playerTimeout = setTimeout(playNext, 2000); 
+      });
+    } else {
+      // It's an image, use the standard interval
+      console.log(`Displaying image for ${slideInterval / 1000}s`);
+      playerTimeout = setTimeout(playNext, slideInterval);
     }
-  };
-  containerElement.slideTimer = setInterval(slide, slideInterval);
+  }
+
+  // Start the first item
+  playCurrent();
 }
 
 // 更新所有區塊
@@ -263,8 +288,8 @@ function updateSection(sectionKey, data, containerId, slideInterval, verbose = f
       if (item.type === 'video') {
         mediaElement = document.createElement('video');
         mediaElement.src = item.url;
-        mediaElement.autoplay = true;
-        mediaElement.loop = true;
+        // mediaElement.autoplay = true;
+        // mediaElement.loop = true;
         mediaElement.muted = true;
         mediaElement.playsInline = true;
       } else { // 預設為 image
