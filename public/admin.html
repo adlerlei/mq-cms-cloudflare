@@ -45,6 +45,56 @@
         </nav>
     <section class="section">
         <div class="container">
+            <!-- Layout and Device Management -->
+            <div class="columns">
+                <!-- Layout Management -->
+                <div class="column is-half">
+                    <div class="box">
+                        <h2 class="title is-4">版面管理 (Layouts)</h2>
+                        <div class="field has-addons">
+                            <div class="control is-expanded">
+                                <div class="select is-fullwidth">
+                                    <select id="layoutSelector">
+                                        <option>Loading...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="control">
+                                <button id="deleteLayoutButton" class="button is-danger" disabled>刪除此版面</button>
+                            </div>
+                        </div>
+                        <form id="createLayoutForm" class="field has-addons">
+                            <div class="control is-expanded">
+                                <input id="newLayoutName" class="input" type="text" placeholder="輸入新版面名稱 (e.g., driving_school)" required>
+                            </div>
+                            <div class="control">
+                                <button type="submit" class="button is-success">建立新版面</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <!-- Device Management -->
+                <div class="column is-half">
+                    <div class="box">
+                        <h2 class="title is-4">設備列表與指派</h2>
+                        <div id="deviceListContainer" class="table-container">
+                            <table class="table is-fullwidth is-striped">
+                                <thead>
+                                    <tr>
+                                        <th>設備 ID</th>
+                                        <th>目前指派版面</th>
+                                        <th>最後上線時間</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="deviceListBody">
+                                    <tr><td colspan="3" class="has-text-centered">載入中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <hr>
             <div class="columns is-multiline">
                 <!-- 新增媒體 / 指派內容 -->
                 <div class="column is-half">
