@@ -200,6 +200,27 @@ function initializeWebSocket() {
                 console.log(`Update received for current layout (${currentLayoutName}). Refreshing.`);
                 fetchMediaData().then(updateAllSections);
             }
+        } else if (data.type === 'device_assigned') {
+            // Check if this device was reassigned
+            if (data.deviceId === currentDeviceId) {
+                console.log(`⚡ This device (${currentDeviceId}) was reassigned to layout: ${data.layoutName}`);
+                console.log(`Current layout: ${currentLayoutName} -> New layout: ${data.layoutName}`);
+                
+                // If layout changed, fetch new configuration
+                if (data.layoutName !== currentLayoutName) {
+                    console.log('🔄 Layout changed! Fetching new configuration...');
+                    updateDebugOverlay('Switching layout...');
+                    fetchMediaData().then(newData => {
+                        if (newData) {
+                            console.log(`✅ Successfully switched to layout: ${newData.layout}`);
+                            updateAllSections(newData);
+                            updateDebugOverlay('Active');
+                        }
+                    });
+                } else {
+                    console.log('ℹ️ Layout unchanged, no action needed.');
+                }
+            }
         }
     };
 
@@ -214,12 +235,56 @@ function initializeWebSocket() {
     };
 }
 
+// Update debug overlay
+function updateDebugOverlay(status) {
+    const deviceIdEl = document.getElementById('debug-device-id');
+    const layoutEl = document.getElementById('debug-layout');
+    const statusEl = document.getElementById('debug-status');
+    
+    if (deviceIdEl) deviceIdEl.textContent = currentDeviceId || 'Unknown';
+    if (layoutEl) layoutEl.textContent = currentLayoutName || 'Loading...';
+    if (statusEl) statusEl.textContent = status || 'Active';
+}
+
+// Create a debug info overlay (only visible in console or can be toggled)
+function showDebugInfo() {
+    console.log('═══════════════════════════════════════');
+    console.log('📺 MQ CMS Player - Debug Info');
+    console.log('═══════════════════════════════════════');
+    console.log(`🆔 Device ID: ${currentDeviceId}`);
+    console.log(`📋 Current Layout: ${currentLayoutName || 'Loading...'}`);
+    console.log(`🌐 WebSocket: ${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
+    console.log('═══════════════════════════════════════');
+    console.log('💡 Tip: Press Ctrl+D (or Cmd+D on Mac) to toggle debug overlay');
+    updateDebugOverlay('Active');
+}
+
+// Toggle debug overlay with Ctrl+D (or Cmd+D on Mac)
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        e.preventDefault();
+        const overlay = document.getElementById('debug-overlay');
+        if (overlay) {
+            overlay.style.display = overlay.style.display === 'none' ? 'block' : 'none';
+            console.log(`Debug overlay ${overlay.style.display === 'block' ? 'shown' : 'hidden'}`);
+        }
+    }
+});
+
 // Main initialization on DOMContentLoaded
 document.addEventListener("DOMContentLoaded", () => {
-    console.log('Page loaded, initializing...');
+    console.log('🚀 Page loaded, initializing MQ CMS Player...');
     currentDeviceId = getDeviceId();
     if (currentDeviceId) {
-        fetchMediaData().then(updateAllSections);
+        console.log(`✅ Device ID obtained: ${currentDeviceId}`);
+        fetchMediaData().then(data => {
+            if (data) {
+                updateAllSections(data);
+                showDebugInfo();
+            }
+        });
         initializeWebSocket();
+    } else {
+        console.error('❌ Failed to get device ID!');
     }
 });
