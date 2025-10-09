@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>版面預覽選擇器</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+</head>
+<body>
+    <section class="hero is-info is-fullheight">
+        <div class="hero-body">
+            <div class="container">
+                <div class="columns is-centered">
+                    <div class="column is-half">
+                        <div class="box">
+                            <h1 class="title has-text-centered">版面預覽選擇器</h1>
+                            <p class="subtitle has-text-centered">選擇要預覽的版面配置</p>
+                            
+                            <div id="layoutList" class="content">
+                                <p class="has-text-centered">載入中...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        async function loadLayouts() {
+            try {
+                const response = await fetch('/api/layouts');
+                if (!response.ok) throw new Error('Failed to fetch layouts');
+                
+                const layouts = await response.json();
+                const container = document.getElementById('layoutList');
+                
+                if (layouts.length === 0) {
+                    container.innerHTML = '<p class="has-text-centered">沒有可用的版面</p>';
+                    return;
+                }
+                
+                container.innerHTML = layouts.map(layout => `
+                    <a href="/display.html?deviceId=preview-${layout.name}" 
+                       class="button is-primary is-fullwidth is-large mb-3"
+                       target="_blank">
+                        <span class="icon">
+                            <i class="fas fa-play"></i>
+                        </span>
+                        <span>預覽 ${layout.name} 版面</span>
+                    </a>
+                `).join('');
+            } catch (error) {
+                console.error('Load layouts error:', error);
+                document.getElementById('layoutList').innerHTML = 
+                    '<p class="has-text-centered has-text-danger">載入失敗</p>';
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', loadLayouts);
+    </script>
+    <script defer src="https://use.fontawesome.com/releases/v5.15.4/js/all.js"></script>
+</body>
+</html>

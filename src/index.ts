@@ -170,6 +170,12 @@ export class MessageBroadcaster {
 				const devices = await this.getDevices();
 				return new Response(JSON.stringify(devices), { headers: { 'Content-Type': 'application/json' } });
 			}
+			if (path.startsWith('/api/devices/') && method === 'DELETE') {
+				const deviceId = decodeURIComponent(path.replace('/api/devices/', ''));
+				await this.deleteDevice(deviceId);
+				this.broadcast(JSON.stringify({ type: 'device_deleted', deviceId }));
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+			}
 			if (path === '/api/assign' && method === 'POST') {
 				const device = await request.json() as Device;
 				await this.saveDevice(device);
@@ -238,6 +244,7 @@ export class MessageBroadcaster {
 	async deleteLayout(layoutName: string): Promise<void> { let layouts = await this.getLayouts(); layouts = layouts.filter(l => l.name !== layoutName); await this.state.storage.put('layouts', layouts); }
 	async getDevices(): Promise<Device[]> { return (await this.state.storage.get<Device[]>('devices')) || []; }
 	async saveDevice(device: Device): Promise<void> { let devices = await this.getDevices(); const index = devices.findIndex(d => d.id === device.id); if (index !== -1) { devices[index] = device; } else { devices.push(device); } await this.state.storage.put('devices', devices); }
+	async deleteDevice(deviceId: string): Promise<void> { let devices = await this.getDevices(); devices = devices.filter(d => d.id !== deviceId); await this.state.storage.put('devices', devices); }
 
 	private async setupHeartbeat(): Promise<void> { if (await this.state.storage.getAlarm() === null) { await this.state.storage.setAlarm(Date.now() + this.pingInterval); } }
 	async alarm(): Promise<void> { this.broadcast(JSON.stringify({ type: 'ping' })); await this.state.storage.setAlarm(Date.now() + this.pingInterval); }
@@ -263,15 +270,23 @@ export default {
 			const deviceId = url.searchParams.get('deviceId');
 			if (!deviceId) return new Response('deviceId is required', { status: 400 });
 
-			const devicesResponse = await stub.fetch('http://localhost/api/devices');
-			const devices = await devicesResponse.json() as Device[];
-			const device = devices.find(d => d.id === deviceId);
-			const layoutName = device ? device.layoutName : 'default';
+			// Determine layout name based on device ID
+			let layoutName = 'default';
+			if (deviceId.startsWith('admin-view-') || deviceId.startsWith('preview-')) {
+				// Extract layout name from admin-view-{layoutName} or preview-{layoutName}
+				layoutName = deviceId.replace('admin-view-', '').replace('preview-', '');
+			} else {
+				// For real devices, lookup their assigned layout
+				const devicesResponse = await stub.fetch('http://localhost/api/devices');
+				const devices = await devicesResponse.json() as Device[];
+				const device = devices.find(d => d.id === deviceId);
+				layoutName = device ? device.layoutName : 'default';
 
-			// Only auto-assign for real devices, not admin views
-			if (!env.VITEST_POOL_ID && !deviceId.startsWith('admin-view-')) {
-				const assignRequest = new Request('http://localhost/api/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: deviceId, layoutName, last_seen: new Date().toISOString() }) });
-				ctx.waitUntil(stub.fetch(assignRequest));
+				// Auto-assign for real devices
+				if (!env.VITEST_POOL_ID) {
+					const assignRequest = new Request('http://localhost/api/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: deviceId, layoutName, last_seen: new Date().toISOString() }) });
+					ctx.waitUntil(stub.fetch(assignRequest));
+				}
 			}
 
 			const [materials, assignments, groups, settings] = await Promise.all([
@@ -281,8 +296,130 @@ export default {
 				stub.fetch(`http://localhost/api/settings?layout=${layoutName}`).then(res => res.json()),
 			]);
 			
+			console.log(`[/api/config] deviceId=${deviceId}, layoutName=${layoutName}, materials count=${materials.length}`);
+			
 			const response = { layout: layoutName, materials, assignments, groups, settings, available_sections: { header_video: '頁首影片區', carousel_top_left: '左上輪播區', carousel_top_right: '右上輪播區', carousel_bottom_left: '左下輪播區', carousel_bottom_right: '右下輪播區', footer_content: '頁尾內容區' } };
 			return new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+		}
+
+		// Handle media upload
+		if (url.pathname === '/api/media' && request.method === 'POST') {
+			try {
+				const formData = await request.formData();
+				const file = formData.get('file') as File;
+				const layoutName = formData.get('layout') as string || 'default';
+				const sectionKey = formData.get('section_key') as string;
+
+				console.log(`[/api/media] Upload request - layout=${layoutName}, file=${file?.name}, fileSize=${file?.size}, section_key=${sectionKey}`);
+
+				if (!file || !file.name) {
+					console.error('[/api/media] No file provided in request');
+					return new Response(JSON.stringify({ 
+						error: '未選擇檔案',
+						message: '請確保已選擇要上傳的圖片或影片檔案'
+					}), { 
+						status: 400, 
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+					});
+				}
+				
+				if (file.size === 0) {
+					console.error('[/api/media] File size is 0');
+					return new Response(JSON.stringify({ 
+						error: '檔案無效',
+						message: '上傳的檔案大小為 0，請選擇有效的檔案'
+					}), { 
+						status: 400, 
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+					});
+				}
+
+				// Generate unique filename
+				const timestamp = Date.now();
+				const originalFilename = file.name;
+				const ext = originalFilename.split('.').pop();
+				const uniqueFilename = `${timestamp}-${Math.random().toString(36).substr(2, 9)}.${ext}`;
+
+				// Upload to R2
+				await env.MEDIA_BUCKET.put(uniqueFilename, file.stream(), {
+					httpMetadata: {
+						contentType: file.type,
+					},
+				});
+
+				// Create material record
+				const material: MediaMaterial = {
+					id: generateId(),
+					filename: uniqueFilename,
+					original_filename: originalFilename,
+					type: getFileType(originalFilename),
+					url: `/media/${uniqueFilename}`,
+					size: file.size,
+					uploaded_at: new Date().toISOString(),
+				};
+
+				// Save to Durable Object
+				const saveRequest = new Request(`http://localhost/api/materials?layout=${layoutName}`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(material),
+				});
+				const saveResponse = await stub.fetch(saveRequest);
+				console.log(`[/api/media] Material saved to layout=${layoutName}, material.id=${material.id}, response.ok=${saveResponse.ok}`);
+
+				// If section_key is provided, auto-assign
+				if (sectionKey) {
+					const assignment: Assignment = {
+						id: generateId(),
+						section_key: sectionKey,
+						content_type: 'single_media',
+						content_id: material.id,
+						created_at: new Date().toISOString(),
+					};
+					const assignRequest = new Request(`http://localhost/api/assignments?layout=${layoutName}`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(assignment),
+					});
+					await stub.fetch(assignRequest);
+				}
+
+				return new Response(JSON.stringify({ 
+					success: true, 
+					material,
+					message: '上傳成功'
+				}), { 
+					status: 200,
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+				});
+			} catch (error) {
+				console.error('Media upload error:', error);
+				return new Response(JSON.stringify({ 
+					error: '上傳失敗', 
+					message: error instanceof Error ? error.message : '未知錯誤'
+				}), { 
+					status: 500,
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+				});
+			}
+		}
+
+		// Handle media serving from R2
+		if (url.pathname.startsWith('/media/')) {
+			const filename = url.pathname.replace('/media/', '');
+			const object = await env.MEDIA_BUCKET.get(filename);
+			
+			if (!object) {
+				return new Response('File not found', { status: 404 });
+			}
+
+			return new Response(object.body, {
+				headers: {
+					'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+					'Cache-Control': 'public, max-age=31536000',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
 		}
 
 		if (url.pathname.startsWith('/api/') || url.pathname === '/ws') {

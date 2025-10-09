@@ -15,8 +15,8 @@ describe('MQ CMS Worker', () => {
 		expect(response.status).toBe(404);
 	});
 
-	it('handles media API endpoint', async () => {
-		const request = new IncomingRequest('http://example.com/api/media');
+	it('handles config API endpoint', async () => {
+		const request = new IncomingRequest('http://example.com/api/config?deviceId=test-device');
 		const ctx = createExecutionContext();
 		const response = await worker.fetch(request, env, ctx);
 		await waitOnExecutionContext(ctx);
@@ -24,8 +24,8 @@ describe('MQ CMS Worker', () => {
 		expect(response.headers.get('Content-Type')).toBe('application/json');
 	});
 
-	it('handles media with settings API endpoint', async () => {
-		const request = new IncomingRequest('http://example.com/api/media_with_settings');
+	it('handles config API endpoint with full data', async () => {
+		const request = new IncomingRequest('http://example.com/api/config?deviceId=test-device');
 		const ctx = createExecutionContext();
 		const response = await worker.fetch(request, env, ctx);
 		await waitOnExecutionContext(ctx);
@@ -35,6 +35,7 @@ describe('MQ CMS Worker', () => {
 		expect(data).toHaveProperty('assignments');
 		expect(data).toHaveProperty('groups');
 		expect(data).toHaveProperty('settings');
+		expect(data).toHaveProperty('layout');
 	});
 
 	// Note: WebSocket tests are commented out due to Durable Object storage isolation issues
