@@ -5,6 +5,7 @@
 .vscode/
 Thumbs.db
 工作日誌.md
+.claude
 
 # Node / Javascript
 node_modules/

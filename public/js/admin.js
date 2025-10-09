@@ -84,10 +84,10 @@ async function fetchLayoutData(layoutName) {
     try {
         const response = await fetchWithAuth(`/api/config?deviceId=admin-view-${layoutName}`);
         if (!response.ok) throw new Error(`API request failed: ${response.status}`);
-        
+
         const data = await response.json();
         console.log(`Fetched data for layout '${layoutName}':`, data);
-        
+
         const media = (data.materials || []).map(material => ({
             id: material.id,
             filename: material.filename,
@@ -95,12 +95,30 @@ async function fetchLayoutData(layoutName) {
             type: getFileType(material.filename),
             url: material.url
         }));
-        
+
+        // Update state directly without triggering subscribers (to avoid infinite loop)
         appState = { ...appState, media, ...data };
-        stateSubscribers.forEach(callback => callback(appState));
+        // Only render UI, don't trigger full state change cycle
+        render();
     } catch (error) {
         console.error(`Failed to fetch data for layout '${layoutName}':`, error);
         alert(`Could not load data for layout '${layoutName}'.`);
+    }
+}
+
+async function refreshDevicesOnly() {
+    try {
+        const response = await fetchWithAuth('/api/devices');
+        if (!response.ok) throw new Error('Could not fetch devices');
+        
+        const devices = await response.json();
+        
+        // Update state directly without triggering subscribers
+        appState = { ...appState, devices };
+        // Only render devices, don't trigger full state change cycle
+        renderDevices();
+    } catch (error) {
+        console.error('Failed to refresh devices:', error);
     }
 }
 
@@ -229,9 +247,11 @@ function initializeWebSocket() {
         if (data.type === 'ping') {
             socket.send(JSON.stringify({ type: 'pong' }));
         } else if (data.type === 'section_updated' && data.layout === appState.activeLayout) {
+            // Only refresh layout data for the current active layout
             fetchLayoutData(appState.activeLayout);
         } else if (data.type === 'device_assigned') {
-            getInitialAdminData();
+            // Only refresh devices list, not full data
+            refreshDevicesOnly();
         }
     };
 

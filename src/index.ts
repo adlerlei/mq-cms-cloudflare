@@ -268,7 +268,8 @@ export default {
 			const device = devices.find(d => d.id === deviceId);
 			const layoutName = device ? device.layoutName : 'default';
 
-			if (!env.VITEST_POOL_ID) {
+			// Only auto-assign for real devices, not admin views
+			if (!env.VITEST_POOL_ID && !deviceId.startsWith('admin-view-')) {
 				const assignRequest = new Request('http://localhost/api/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: deviceId, layoutName, last_seen: new Date().toISOString() }) });
 				ctx.waitUntil(stub.fetch(assignRequest));
 			}
@@ -288,6 +289,12 @@ export default {
 			return stub.fetch(request);
 		}
 
-		return env.ASSETS.fetch(request);
+		// Handle static file serving with ASSETS binding
+		if (env.ASSETS) {
+			return env.ASSETS.fetch(request);
+		}
+
+		// Fallback if ASSETS binding is not available
+		return new Response('Static assets not configured properly', { status: 500 });
 	},
 };

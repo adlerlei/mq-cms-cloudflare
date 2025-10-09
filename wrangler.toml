@@ -14,9 +14,10 @@ class_name = "MessageBroadcaster"
 binding = "MEDIA_BUCKET"
 bucket_name = "mq-cms-media"
 
-# 綁定靜態資源目錄
+# 靜態資源配置 - 正確的 assets 語法
 [assets]
 directory = "./public"
+binding = "ASSETS"
 
 # 【修正這個區塊】
 # 這次我們使用一個新的 tag (v2) 來強制執行新的遷移
