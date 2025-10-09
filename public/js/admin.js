@@ -135,21 +135,86 @@ function renderLayouts() {
 function renderDevices() {
     const tbody = document.getElementById('deviceListBody');
     if (!tbody) return;
-    tbody.innerHTML = appState.devices.length === 0
-        ? '<tr><td colspan="4" class="has-text-centered">尚無設備連接。</td></tr>'
-        : appState.devices.map(device => {
-            const layoutOptions = appState.layouts.map(l => `<option value="${l.name}" ${device.layoutName === l.name ? 'selected' : ''}>${l.name}</option>`).join('');
-            return `<tr>
-                <td>${device.id}</td>
-                <td><div class="select is-small"><select class="device-layout-assign" data-device-id="${device.id}">${layoutOptions}</select></div></td>
-                <td>${device.last_seen ? new Date(device.last_seen).toLocaleString() : '從未'}</td>
-                <td class="has-text-right">
-                    <button class="button is-danger is-small delete-device-button" data-device-id="${device.id}">
-                        <i class="fas fa-trash"></i> 刪除
+    
+    if (appState.devices.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="has-text-centered">尚無設備連接。</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = appState.devices.map(device => {
+        const layoutOptions = appState.layouts.map(l => 
+            `<option value="${l.name}" ${device.layoutName === l.name ? 'selected' : ''}>${l.name}</option>`
+        ).join('');
+        
+        // Device name with icon
+        const deviceName = device.name || '未命名設備';
+        const deviceIcon = '🖥️';
+        
+        // Truncate UUID (first 8 chars)
+        const shortId = device.id.substring(0, 8) + '...';
+        const copyBtn = `<button class="button is-text is-small copy-id-button" data-device-id="${device.id}" title="複製完整 ID">
+            <i class="fas fa-copy"></i>
+        </button>`;
+        
+        // Status indicator (online/abnormal/offline)
+        const lastSeen = device.last_seen ? new Date(device.last_seen).getTime() : 0;
+        const now = Date.now();
+        const diffMinutes = (now - lastSeen) / 1000 / 60;
+        let statusIcon, statusText, statusClass;
+        
+        if (!device.last_seen) {
+            statusIcon = '⚪';
+            statusText = '從未連接';
+            statusClass = 'has-text-grey-light';
+        } else if (diffMinutes < 5) {
+            statusIcon = '🟢';
+            statusText = '正常運行';
+            statusClass = 'has-text-success';
+        } else if (diffMinutes < 30) {
+            statusIcon = '🟡';
+            statusText = '連接異常';
+            statusClass = 'has-text-warning';
+        } else {
+            statusIcon = '🔴';
+            statusText = '已離線';
+            statusClass = 'has-text-danger';
+        }
+        
+        return `<tr>
+            <td>
+                <div class="is-flex is-align-items-center">
+                    <span class="mr-2">${deviceIcon}</span>
+                    <strong>${deviceName}</strong>
+                </div>
+                <div class="is-size-7 has-text-grey mt-1">
+                    <span class="is-family-monospace">${shortId}</span>
+                    ${copyBtn}
+                </div>
+            </td>
+            <td>
+                <div class="select is-small is-fullwidth">
+                    <select class="device-layout-assign" data-device-id="${device.id}">
+                        ${layoutOptions}
+                    </select>
+                </div>
+            </td>
+            <td>
+                <span class="${statusClass}">
+                    ${statusIcon} ${statusText}
+                </span>
+            </td>
+            <td class="has-text-right">
+                <div class="buttons is-right">
+                    <button class="button is-info is-small edit-device-button" data-device-id="${device.id}" title="編輯設備資訊">
+                        <i class="fas fa-edit"></i>
                     </button>
-                </td>
-            </tr>`;
-        }).join('');
+                    <button class="button is-danger is-small delete-device-button" data-device-id="${device.id}" title="刪除設備">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
 }
 
 function renderSectionAssignments() {
@@ -367,7 +432,10 @@ async function handleDeviceAssign(select) {
 }
 
 async function handleDeleteDevice(deviceId) {
-    if (!confirm(`確定要刪除設備 "${deviceId}" 嗎？\n\n刪除後該設備需要重新連接並註冊。`)) return;
+    const device = appState.devices.find(d => d.id === deviceId);
+    const deviceName = device?.name || deviceId;
+    
+    if (!confirm(`確定要刪除設備 "${deviceName}" 嗎？\n\n刪除後該設備需要重新連接並註冊。`)) return;
 
     console.log(`Deleting device: id=${deviceId}`);
 
@@ -375,12 +443,74 @@ async function handleDeleteDevice(deviceId) {
         const response = await fetchWithAuth(`/api/devices/${deviceId}`, { method: 'DELETE' });
         if (!response.ok) throw new Error('Failed to delete device.');
         
-        showNotification(`設備 "${deviceId}" 刪除成功。`, 'success');
+        showNotification(`設備 "${deviceName}" 刪除成功。`, 'success');
         await refreshDevicesOnly();
     } catch (error) {
         console.error('Delete device error:', error);
         showNotification(`刪除失敗：${error.message}`, 'danger');
     }
+}
+
+function openEditDeviceModal(deviceId) {
+    const device = appState.devices.find(d => d.id === deviceId);
+    if (!device) return;
+    
+    document.getElementById('editDeviceId').value = device.id;
+    document.getElementById('editDeviceName').value = device.name || '';
+    document.getElementById('editDeviceAddress').value = device.address || '';
+    document.getElementById('editDeviceNotes').value = device.notes || '';
+    document.getElementById('editDeviceIdDisplay').value = device.id;
+    
+    openModal('editDeviceModal');
+}
+
+async function handleSaveDevice() {
+    const deviceId = document.getElementById('editDeviceId').value;
+    const name = document.getElementById('editDeviceName').value.trim();
+    const address = document.getElementById('editDeviceAddress').value.trim();
+    const notes = document.getElementById('editDeviceNotes').value.trim();
+    
+    if (!name) {
+        showNotification('請輸入設備名稱', 'warning');
+        return;
+    }
+    
+    console.log(`Saving device: id=${deviceId}, name=${name}`);
+    
+    try {
+        const response = await fetchWithAuth(`/api/devices/${deviceId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, address, notes })
+        });
+        
+        if (!response.ok) throw new Error('Failed to update device.');
+        
+        showNotification(`設備 "${name}" 更新成功。`, 'success');
+        closeModal('editDeviceModal');
+        await refreshDevicesOnly();
+    } catch (error) {
+        console.error('Save device error:', error);
+        showNotification(`儲存失敗：${error.message}`, 'danger');
+    }
+}
+
+function copyDeviceId() {
+    const idInput = document.getElementById('editDeviceIdDisplay');
+    idInput.select();
+    document.execCommand('copy');
+    showNotification('設備 ID 已複製到剪貼簿', 'info');
+}
+
+function copyDeviceIdFromList(deviceId) {
+    // 創建臨時輸入框
+    const tempInput = document.createElement('input');
+    tempInput.value = deviceId;
+    document.body.appendChild(tempInput);
+    tempInput.select();
+    document.execCommand('copy');
+    document.body.removeChild(tempInput);
+    showNotification('設備 ID 已複製到剪貼簿', 'info');
 }
 
 async function handleMediaUpload(e) {
@@ -642,9 +772,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.matches('.device-layout-assign')) handleDeviceAssign(e.target);
     });
     document.body.addEventListener('click', e => {
+        // Delete device
         if (e.target.matches('.delete-device-button') || e.target.closest('.delete-device-button')) {
             const button = e.target.matches('.delete-device-button') ? e.target : e.target.closest('.delete-device-button');
             handleDeleteDevice(button.dataset.deviceId);
+        }
+        // Edit device
+        if (e.target.matches('.edit-device-button') || e.target.closest('.edit-device-button')) {
+            const button = e.target.matches('.edit-device-button') ? e.target : e.target.closest('.edit-device-button');
+            openEditDeviceModal(button.dataset.deviceId);
+        }
+        // Copy device ID from list
+        if (e.target.matches('.copy-id-button') || e.target.closest('.copy-id-button')) {
+            const button = e.target.matches('.copy-id-button') ? e.target : e.target.closest('.copy-id-button');
+            e.stopPropagation();
+            copyDeviceIdFromList(button.dataset.deviceId);
         }
     });
 
@@ -710,6 +852,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (modal) closeModal(modal.id);
         }
     });
+
+    // Edit device modal buttons
+    document.getElementById('saveDeviceButton').addEventListener('click', handleSaveDevice);
+    document.getElementById('cancelDeviceButton').addEventListener('click', () => closeModal('editDeviceModal'));
+    document.getElementById('copyDeviceIdButton').addEventListener('click', copyDeviceId);
 
     // Logout button
     document.getElementById('logoutButton').addEventListener('click', () => {

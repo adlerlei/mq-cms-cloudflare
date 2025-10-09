@@ -87,14 +87,14 @@
                             <table class="table is-fullwidth is-striped">
                                 <thead>
                                     <tr>
-                                        <th>設備 ID</th>
-                                        <th>目前指派版面</th>
-                                        <th>最後上線時間</th>
+                                        <th>設備名稱 / ID</th>
+                                        <th>指派版面</th>
+                                        <th>狀態</th>
                                         <th class="has-text-right">操作</th>
                                     </tr>
                                 </thead>
                                 <tbody id="deviceListBody">
-                                    <tr><td colspan="4" class="has-text-centered">載入中...</td></tr>
+                                    <tr><td colspan="5" class="has-text-centered">載入中...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -342,6 +342,74 @@
             <footer class="modal-card-foot">
                 <button id="confirmReassignButton" class="button is-success">確認指派</button>
                 <button class="button" id="cancelReassignButton">取消</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- 編輯設備 Modal -->
+    <div id="editDeviceModal" class="modal">
+        <div class="modal-background"></div>
+        <div class="modal-card">
+            <header class="modal-card-head">
+                <p class="modal-card-title">編輯設備資訊</p>
+                <button class="delete" aria-label="close"></button>
+            </header>
+            <section class="modal-card-body">
+                <input type="hidden" id="editDeviceId">
+                
+                <div class="field">
+                    <label class="label">設備名稱</label>
+                    <div class="control has-icons-left">
+                        <input class="input" type="text" id="editDeviceName" placeholder="例如：一樓大廳廣告機" maxlength="50">
+                        <span class="icon is-small is-left">
+                            <i class="fas fa-tv"></i>
+                        </span>
+                    </div>
+                    <p class="help">為設備設定一個容易識別的名稱</p>
+                </div>
+
+                <div class="field">
+                    <label class="label">設備地址</label>
+                    <div class="control has-icons-left">
+                        <input class="input" type="text" id="editDeviceAddress" placeholder="例如：台北市信義區信義路五段7號" maxlength="200">
+                        <span class="icon is-small is-left">
+                            <i class="fas fa-map-marker-alt"></i>
+                        </span>
+                    </div>
+                    <p class="help">設備安裝地點的實際地址，方便工程人員維護</p>
+                </div>
+
+                <div class="field">
+                    <label class="label">備註</label>
+                    <div class="control">
+                        <textarea class="textarea" id="editDeviceNotes" placeholder="例如：主要播放駕訓班宣傳影片，每週一更新內容" rows="3" maxlength="500"></textarea>
+                    </div>
+                    <p class="help">其他需要記錄的資訊</p>
+                </div>
+
+                <div class="field">
+                    <label class="label">設備 ID（唯一識別碼）</label>
+                    <div class="control">
+                        <div class="field has-addons">
+                            <div class="control is-expanded">
+                                <input class="input is-family-monospace" type="text" id="editDeviceIdDisplay" readonly>
+                            </div>
+                            <div class="control">
+                                <button class="button" id="copyDeviceIdButton" type="button">
+                                    <span class="icon">
+                                        <i class="fas fa-copy"></i>
+                                    </span>
+                                    <span>複製</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="help has-text-grey-light">此 ID 由系統自動生成，無法修改</p>
+                </div>
+            </section>
+            <footer class="modal-card-foot">
+                <button class="button is-success" id="saveDeviceButton">儲存</button>
+                <button class="button" id="cancelDeviceButton">取消</button>
             </footer>
         </div>
     </div>

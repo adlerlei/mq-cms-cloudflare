@@ -38,8 +38,12 @@ interface Settings {
 
 interface Device {
 	id: string;
+	name?: string;
+	address?: string;
+	notes?: string;
 	layoutName: string;
 	last_seen: string;
+	created_at?: string;
 }
 
 interface Layout {
@@ -176,6 +180,12 @@ export class MessageBroadcaster {
 				this.broadcast(JSON.stringify({ type: 'device_deleted', deviceId }));
 				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
 			}
+			if (path.startsWith('/api/devices/') && method === 'PUT') {
+				const deviceId = decodeURIComponent(path.replace('/api/devices/', ''));
+				const updates = await request.json() as Partial<Device>;
+				await this.updateDevice(deviceId, updates);
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+			}
 			if (path === '/api/assign' && method === 'POST') {
 				const device = await request.json() as Device;
 				await this.saveDevice(device);
@@ -243,7 +253,8 @@ export class MessageBroadcaster {
 	async saveLayout(layout: Layout): Promise<void> { const layouts = await this.getLayouts(); if (!layouts.some(l => l.name === layout.name)) { layouts.push(layout); await this.state.storage.put('layouts', layouts); } }
 	async deleteLayout(layoutName: string): Promise<void> { let layouts = await this.getLayouts(); layouts = layouts.filter(l => l.name !== layoutName); await this.state.storage.put('layouts', layouts); }
 	async getDevices(): Promise<Device[]> { return (await this.state.storage.get<Device[]>('devices')) || []; }
-	async saveDevice(device: Device): Promise<void> { let devices = await this.getDevices(); const index = devices.findIndex(d => d.id === device.id); if (index !== -1) { devices[index] = device; } else { devices.push(device); } await this.state.storage.put('devices', devices); }
+	async saveDevice(device: Device): Promise<void> { let devices = await this.getDevices(); const index = devices.findIndex(d => d.id === device.id); if (index !== -1) { devices[index] = { ...devices[index], ...device }; } else { devices.push({ ...device, created_at: device.created_at || new Date().toISOString() }); } await this.state.storage.put('devices', devices); }
+	async updateDevice(deviceId: string, updates: Partial<Device>): Promise<void> { let devices = await this.getDevices(); const index = devices.findIndex(d => d.id === deviceId); if (index !== -1) { devices[index] = { ...devices[index], ...updates }; await this.state.storage.put('devices', devices); } }
 	async deleteDevice(deviceId: string): Promise<void> { let devices = await this.getDevices(); devices = devices.filter(d => d.id !== deviceId); await this.state.storage.put('devices', devices); }
 
 	private async setupHeartbeat(): Promise<void> { if (await this.state.storage.getAlarm() === null) { await this.state.storage.setAlarm(Date.now() + this.pingInterval); } }
