@@ -265,63 +265,144 @@ function renderMediaLibrary() {
     }
 
     console.log('Rendering media library with materials:', appState.materials);
+    console.log('Assignments:', appState.assignments);
+    console.log('Groups:', appState.groups);
     
-    if (!appState.materials || appState.materials.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="has-text-centered">目前沒有任何媒體檔案。</td></tr>';
-        return;
+    const allItems = [];
+    
+    // Collect all material IDs that are in groups (to filter them out)
+    const materialsInGroups = new Set();
+    if (appState.groups && appState.groups.length > 0) {
+        appState.groups.forEach(group => {
+            if (group.materials && Array.isArray(group.materials)) {
+                group.materials.forEach(matId => materialsInGroups.add(matId));
+            }
+        });
     }
-
-    tbody.innerHTML = appState.materials.map(material => {
-        const assignment = appState.assignments.find(a => a.content_id === material.id && a.content_type === 'single_media');
-        const assignedSection = assignment ? appState.available_sections[assignment.section_key] : null;
-        
-        const preview = material.type === 'image' 
-            ? `<img src="${material.url}" alt="${material.filename}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;">`
-            : `<video src="${material.url}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;" muted></video>`;
-        
-        const statusBadge = assignedSection 
-            ? `<span class="tag is-success">${assignedSection}</span>`
-            : '<span class="tag is-light">未指派</span>';
+    console.log('Materials in groups:', Array.from(materialsInGroups));
+    
+    // Add individual media files (exclude those in groups)
+    if (appState.materials && appState.materials.length > 0) {
+        appState.materials.forEach(material => {
+            // Skip materials that are in groups
+            if (materialsInGroups.has(material.id)) {
+                console.log(`Skipping material ${material.filename} (in a group)`);
+                return;
+            }
             
-        return `
-            <tr>
-                <td>
-                    <div class="media">
-                        <div class="media-left">
-                            ${preview}
+            const assignment = appState.assignments.find(a => a.content_id === material.id && a.content_type === 'single_media');
+            const assignedSection = assignment ? appState.available_sections[assignment.section_key] : null;
+            
+            const preview = material.type === 'image' 
+                ? `<img src="${material.url}" alt="${material.filename}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;">`
+                : `<video src="${material.url}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;" muted></video>`;
+            
+            const statusBadge = assignedSection 
+                ? `<span class="tag is-success">${assignedSection}</span>`
+                : '<span class="tag is-light">未指派</span>';
+                
+            allItems.push(`
+                <tr>
+                    <td>
+                        <div class="media">
+                            <div class="media-left">
+                                ${preview}
+                            </div>
+                            <div class="media-content">
+                                <p class="is-size-7"><strong>${material.filename}</strong></p>
+                                <p class="is-size-7 has-text-grey">${formatFileSize(material.size)}</p>
+                            </div>
                         </div>
-                        <div class="media-content">
-                            <p class="is-size-7"><strong>${material.filename}</strong></p>
-                            <p class="is-size-7 has-text-grey">${formatFileSize(material.size)}</p>
+                    </td>
+                    <td>
+                        <span class="tag ${material.type === 'image' ? 'is-info' : 'is-warning'}">${material.type === 'image' ? '圖片' : '影片'}</span>
+                    </td>
+                    <td>${statusBadge}</td>
+                    <td class="has-text-right">
+                        <div class="buttons is-right">
+                            ${!assignedSection ? `
+                                <button class="button is-primary is-small reassign-media-button" 
+                                        data-media-id="${material.id}" data-filename="${material.filename}">
+                                    <i class="fas fa-arrow-right"></i> 指派
+                                </button>
+                            ` : `
+                                <button class="button is-info is-small reassign-media-button" 
+                                        data-media-id="${material.id}" data-filename="${material.filename}">
+                                    <i class="fas fa-edit"></i> 重新指派
+                                </button>
+                            `}
+                            <button class="button is-danger is-small delete-media-button" 
+                                    data-media-id="${material.id}" data-filename="${material.filename}">
+                                <i class="fas fa-trash"></i> 刪除
+                            </button>
                         </div>
-                    </div>
-                </td>
-                <td>
-                    <span class="tag ${material.type === 'image' ? 'is-info' : 'is-warning'}">${material.type === 'image' ? '圖片' : '影片'}</span>
-                </td>
-                <td>${statusBadge}</td>
-                <td class="has-text-right">
-                    <div class="buttons is-right">
-                        ${!assignedSection ? `
-                            <button class="button is-primary is-small reassign-media-button" 
-                                    data-media-id="${material.id}" data-filename="${material.filename}">
-                                <i class="fas fa-arrow-right"></i> 指派
+                    </td>
+                </tr>
+            `);
+        });
+    }
+    
+    // Add assigned groups
+    if (appState.assignments && appState.assignments.length > 0) {
+        const groupAssignments = appState.assignments.filter(a => a.content_type === 'group_reference');
+        console.log('Group assignments found:', groupAssignments.length);
+        
+        groupAssignments.forEach(assignment => {
+            console.log('Processing assignment:', assignment.id, 'content_id:', assignment.content_id);
+            const group = appState.groups.find(g => g.id === assignment.content_id);
+            if (!group) {
+                console.warn('Group not found for assignment:', assignment.content_id);
+                console.log('Available groups:', appState.groups.map(g => g.id));
+                return; // Skip if group not found
+            }
+            console.log('Found group:', group.name);
+            
+            const assignedSection = appState.available_sections[assignment.section_key];
+            const offset = assignment.offset || 0;
+            
+            allItems.push(`
+                <tr>
+                    <td>
+                        <div class="media">
+                            <div class="media-left">
+                                <span class="icon is-large has-text-primary">
+                                    <i class="fas fa-images fa-2x"></i>
+                                </span>
+                            </div>
+                            <div class="media-content">
+                                <p class="is-size-7"><strong>🎭 ${group.name}</strong></p>
+                                <p class="is-size-7 has-text-grey">${group.materials.length} 張圖片輪播</p>
+                                ${offset > 0 ? `<p class="is-size-7 has-text-info">偏移: 從第 ${offset + 1} 張開始</p>` : ''}
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="tag is-primary">輪播組</span>
+                    </td>
+                    <td>
+                        <span class="tag is-success">${assignedSection}</span>
+                    </td>
+                    <td class="has-text-right">
+                        <div class="buttons is-right">
+                            <button class="button is-danger is-small delete-assignment-button" 
+                                    data-assignment-id="${assignment.id}" data-content-name="${group.name}">
+                                <i class="fas fa-trash"></i> 移除指派
                             </button>
-                        ` : `
-                            <button class="button is-info is-small reassign-media-button" 
-                                    data-media-id="${material.id}" data-filename="${material.filename}">
-                                <i class="fas fa-edit"></i> 重新指派
-                            </button>
-                        `}
-                        <button class="button is-danger is-small delete-media-button" 
-                                data-media-id="${material.id}" data-filename="${material.filename}">
-                            <i class="fas fa-trash"></i> 刪除
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    }).join('');
+                        </div>
+                    </td>
+                </tr>
+            `);
+        });
+    }
+    
+    console.log('Total items to render:', allItems.length);
+    
+    if (allItems.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="has-text-centered">目前沒有任何媒體檔案或群組指派。</td></tr>';
+    } else {
+        tbody.innerHTML = allItems.join('');
+        console.log('Rendered', allItems.length, 'items to mediaTableBody');
+    }
 }
 
 function renderSettings() {
@@ -532,23 +613,29 @@ async function handleMediaUpload(e) {
         const sectionKey = formData.get('section_key');
         const offset = parseInt(formData.get('carousel_offset') || '0');
         
+        console.log('Group assignment request:', { groupId, sectionKey, offset, layout: appState.activeLayout });
+        
         if (!groupId || !sectionKey) {
             showNotification('請選擇輪播組和指派區塊', 'warning');
             return;
         }
         
+        const assignmentData = {
+            id: generateId(),
+            section_key: sectionKey,
+            content_type: 'group_reference',
+            content_id: groupId,
+            offset: offset,
+            created_at: new Date().toISOString()
+        };
+        
+        console.log('Sending assignment:', assignmentData);
+        
         try {
             const response = await fetchWithAuth(`/api/assignments?layout=${appState.activeLayout}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    id: generateId(),
-                    section_key: sectionKey,
-                    content_type: 'group_reference',
-                    content_id: groupId,
-                    offset: offset,
-                    created_at: new Date().toISOString()
-                })
+                body: JSON.stringify(assignmentData)
             });
             
             if (!response.ok) throw new Error('Failed to assign group.');
@@ -686,9 +773,260 @@ async function handleDeleteGroup(groupId) {
     }
 }
 
+function enableDragSort(container) {
+    let draggedElement = null;
+    
+    container.querySelectorAll('.image-list-item').forEach(item => {
+        item.addEventListener('dragstart', function(e) {
+            draggedElement = this;
+            this.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        
+        item.addEventListener('dragend', function() {
+            this.classList.remove('dragging');
+            container.classList.remove('drag-over');
+        });
+        
+        item.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            
+            if (draggedElement !== this) {
+                const items = Array.from(container.querySelectorAll('.image-list-item'));
+                const draggedIndex = items.indexOf(draggedElement);
+                const targetIndex = items.indexOf(this);
+                
+                if (draggedIndex < targetIndex) {
+                    this.parentNode.insertBefore(draggedElement, this.nextSibling);
+                } else {
+                    this.parentNode.insertBefore(draggedElement, this);
+                }
+            }
+        });
+    });
+    
+    container.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.classList.add('drag-over');
+    });
+    
+    container.addEventListener('dragleave', function() {
+        this.classList.remove('drag-over');
+    });
+}
+
+function openEditGroupModal(groupId) {
+    const group = appState.groups.find(g => g.id === groupId);
+    if (!group) return;
+    
+    document.getElementById('modalGroupId').value = group.id;
+    document.getElementById('modalGroupName').textContent = group.name;
+    
+    // Render selected images
+    const selectedList = document.getElementById('selectedImagesList');
+    if (group.materials && group.materials.length > 0) {
+        selectedList.innerHTML = group.materials.map((materialId, index) => {
+            const material = appState.materials.find(m => m.id === materialId);
+            if (!material) return '';
+            
+            return `
+                <div class="image-list-item" data-material-id="${materialId}" draggable="true">
+                    <img src="${material.url}" alt="${material.original_filename}">
+                    <div class="image-item-info">
+                        <p>${material.original_filename}</p>
+                        <div class="tags">
+                            <span class="tag is-light">順序: ${index + 1}</span>
+                            <span class="tag is-info">${formatFileSize(material.size)}</span>
+                        </div>
+                    </div>
+                    <button class="button is-danger is-small remove-image-button" data-material-id="${materialId}">
+                        <i class="fas fa-times"></i> 移除
+                    </button>
+                </div>
+            `;
+        }).join('');
+        
+        // Enable drag and drop sorting
+        enableDragSort(selectedList);
+    } else {
+        selectedList.innerHTML = '<p class="has-text-grey-light has-text-centered p-4">此群組尚無圖片</p>';
+    }
+    
+    openModal('editCarouselGroupModal');
+}
+
+async function handleSaveGroupChanges() {
+    const groupId = document.getElementById('modalGroupId').value;
+    const group = appState.groups.find(g => g.id === groupId);
+    if (!group) {
+        console.error('[handleSaveGroupChanges] Group not found:', groupId);
+        return;
+    }
+    
+    // Get current order from DOM
+    const imageItems = document.querySelectorAll('#selectedImagesList .image-list-item');
+    const materials = Array.from(imageItems).map(item => item.dataset.materialId);
+    
+    console.log(`[handleSaveGroupChanges] Saving group changes. GroupId=${groupId}, Old materials:`, group.materials);
+    console.log(`[handleSaveGroupChanges] New materials from DOM (count=${materials.length}):`, materials);
+    
+    const updatedGroup = {
+        ...group,
+        materials: materials
+    };
+    
+    console.log(`[handleSaveGroupChanges] Updated group object:`, updatedGroup);
+    
+    try {
+        const response = await fetchWithAuth(`/api/groups/${groupId}?layout=${appState.activeLayout}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedGroup)
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[handleSaveGroupChanges] Update failed:', errorText);
+            throw new Error('Failed to update group.');
+        }
+        
+        const result = await response.json();
+        console.log('[handleSaveGroupChanges] Update success:', result);
+        
+        showNotification(`輪播組 "${group.name}" 更新成功。`, 'success');
+        closeModal('editCarouselGroupModal');
+        await fetchLayoutData(appState.activeLayout);
+        console.log('[handleSaveGroupChanges] Layout data refreshed. Groups:', appState.groups);
+    } catch (error) {
+        console.error('Update group error:', error);
+        showNotification(`更新失敗：${error.message}`, 'danger');
+    }
+}
+
+async function handleUploadToGroup() {
+    const fileInput = document.getElementById('groupImageUpload');
+    const files = fileInput.files;
+    const groupId = document.getElementById('modalGroupId').value;
+    const group = appState.groups.find(g => g.id === groupId);
+    
+    console.log(`[handleUploadToGroup] Starting upload. GroupId=${groupId}, Group found:`, group);
+    
+    if (!files || files.length === 0) {
+        showNotification('請選擇至少一張圖片', 'warning');
+        return;
+    }
+    
+    const progressContainer = document.getElementById('groupUploadProgress');
+    progressContainer.style.display = 'block';
+    
+    try {
+        // Upload each file
+        const uploadedMaterialIds = [];
+        
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('layout', appState.activeLayout);
+            formData.append('group_id', groupId);
+            
+            console.log(`[handleUploadToGroup] Uploading file ${i + 1}/${files.length}: ${file.name}`);
+            
+            const response = await fetchWithAuth('/api/media', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[handleUploadToGroup] Upload failed:`, errorText);
+                throw new Error(`Failed to upload ${file.name}`);
+            }
+            
+            const result = await response.json();
+            console.log(`[handleUploadToGroup] Upload success. Material ID:`, result.material.id);
+            uploadedMaterialIds.push(result.material.id);
+            
+            // Update progress
+            const progress = ((i + 1) / files.length) * 100;
+            progressContainer.querySelector('progress').value = progress;
+        }
+        
+        console.log(`[handleUploadToGroup] All files uploaded. Material IDs:`, uploadedMaterialIds);
+        console.log(`[handleUploadToGroup] Current group materials:`, group.materials);
+        
+        // Update group with new materials
+        const updatedGroup = {
+            ...group,
+            materials: [...(group.materials || []), ...uploadedMaterialIds]
+        };
+        
+        console.log(`[handleUploadToGroup] Updated group object:`, updatedGroup);
+        
+        const updateResponse = await fetchWithAuth(`/api/groups/${groupId}?layout=${appState.activeLayout}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedGroup)
+        });
+        
+        if (!updateResponse.ok) {
+            const errorText = await updateResponse.text();
+            console.error(`[handleUploadToGroup] Group update failed:`, errorText);
+            throw new Error('Failed to update group after upload.');
+        }
+        
+        const updateResult = await updateResponse.json();
+        console.log(`[handleUploadToGroup] Group update success:`, updateResult);
+        
+        showNotification(`成功上傳 ${files.length} 張圖片到群組 "${group.name}"`, 'success');
+        
+        // Reset upload form
+        fileInput.value = '';
+        document.getElementById('groupUploadFileName').textContent = '未選擇任何檔案';
+        document.getElementById('uploadToGroupButton').disabled = true;
+        
+        // Refresh layout data and reopen modal
+        console.log(`[handleUploadToGroup] Refreshing layout data...`);
+        await fetchLayoutData(appState.activeLayout);
+        console.log(`[handleUploadToGroup] Layout data refreshed. Groups:`, appState.groups);
+        openEditGroupModal(groupId);
+        
+    } catch (error) {
+        console.error('Upload to group error:', error);
+        showNotification(`上傳失敗：${error.message}`, 'danger');
+    } finally {
+        progressContainer.style.display = 'none';
+        progressContainer.querySelector('progress').value = 0;
+    }
+}
+
 async function handleDeleteMedia(mediaId) {
     const media = appState.materials.find(m => m.id === mediaId);
-    if (!media || !confirm(`確定要刪除媒體檔案 "${media.filename}" 嗎？`)) return;
+    if (!media) return;
+    
+    // Check if this material is used in any groups
+    const groupsUsingThis = appState.groups.filter(g => 
+        g.materials && g.materials.includes(mediaId)
+    );
+    
+    if (groupsUsingThis.length > 0) {
+        const groupNames = groupsUsingThis.map(g => g.name).join('、');
+        const confirmed = confirm(
+            `⚠️ 警告：此媒體檔案正在被以下群組使用：\n\n` +
+            `${groupNames}\n\n` +
+            `刪除後，這些群組的輪播將會缺少此圖片。\n\n` +
+            `建議：先從群組中移除此圖片，再刪除媒體檔案。\n\n` +
+            `確定要繼續刪除嗎？`
+        );
+        
+        if (!confirmed) {
+            showNotification('已取消刪除操作', 'info');
+            return;
+        }
+    } else {
+        if (!confirm(`確定要刪除媒體檔案 "${media.filename}" 嗎？`)) return;
+    }
 
     console.log(`Deleting media: id=${mediaId}, layout=${appState.activeLayout}`);
 
@@ -697,10 +1035,37 @@ async function handleDeleteMedia(mediaId) {
         if (!response.ok) throw new Error('Failed to delete media.');
         
         showNotification(`媒體檔案 "${media.filename}" 刪除成功。`, 'success');
+        
+        // If material was in groups, warn user to update those groups
+        if (groupsUsingThis.length > 0) {
+            const groupNames = groupsUsingThis.map(g => g.name).join('、');
+            showNotification(
+                `⚠️ 注意：請記得更新群組「${groupNames}」以移除此圖片的引用！`, 
+                'warning'
+            );
+        }
+        
         await fetchLayoutData(appState.activeLayout);
     } catch (error) {
         console.error('Delete media error:', error);
         showNotification(`刪除失敗：${error.message}`, 'danger');
+    }
+}
+
+async function handleDeleteAssignment(assignmentId, contentName) {
+    if (!confirm(`確定要移除 "${contentName}" 的指派嗎？\n\n此操作不會刪除群組本身，只是移除它在區塊的指派。`)) return;
+
+    console.log(`Deleting assignment: id=${assignmentId}, layout=${appState.activeLayout}`);
+
+    try {
+        const response = await fetchWithAuth(`/api/assignments/${assignmentId}?layout=${appState.activeLayout}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error('Failed to delete assignment.');
+        
+        showNotification(`"${contentName}" 的指派已移除。`, 'success');
+        await fetchLayoutData(appState.activeLayout);
+    } catch (error) {
+        console.error('Delete assignment error:', error);
+        showNotification(`移除指派失敗：${error.message}`, 'danger');
     }
 }
 
@@ -828,19 +1193,82 @@ document.addEventListener('DOMContentLoaded', () => {
     // Event listeners for group management
     document.getElementById('createGroupForm').addEventListener('submit', handleCreateGroup);
     document.body.addEventListener('click', e => {
+        // Edit group button
+        if (e.target.matches('.edit-group-button') || e.target.closest('.edit-group-button')) {
+            const button = e.target.matches('.edit-group-button') ? e.target : e.target.closest('.edit-group-button');
+            openEditGroupModal(button.dataset.groupId);
+        }
+        // Delete group button
         if (e.target.matches('.delete-group-button') || e.target.closest('.delete-group-button')) {
             const button = e.target.matches('.delete-group-button') ? e.target : e.target.closest('.delete-group-button');
             handleDeleteGroup(button.dataset.groupId);
         }
+        // Delete media button
         if (e.target.matches('.delete-media-button') || e.target.closest('.delete-media-button')) {
             const button = e.target.matches('.delete-media-button') ? e.target : e.target.closest('.delete-media-button');
             handleDeleteMedia(button.dataset.mediaId);
         }
+        // Delete assignment button (for group assignments)
+        if (e.target.matches('.delete-assignment-button') || e.target.closest('.delete-assignment-button')) {
+            const button = e.target.matches('.delete-assignment-button') ? e.target : e.target.closest('.delete-assignment-button');
+            handleDeleteAssignment(button.dataset.assignmentId, button.dataset.contentName);
+        }
+        // Reassign media button
         if (e.target.matches('.reassign-media-button') || e.target.closest('.reassign-media-button')) {
             const button = e.target.matches('.reassign-media-button') ? e.target : e.target.closest('.reassign-media-button');
             openReassignModal(button.dataset.mediaId, button.dataset.filename);
         }
+        // Remove image from group button
+        if (e.target.matches('.remove-image-button') || e.target.closest('.remove-image-button')) {
+            const button = e.target.matches('.remove-image-button') ? e.target : e.target.closest('.remove-image-button');
+            const materialId = button.dataset.materialId;
+            const imageItem = button.closest('.image-list-item');
+            if (imageItem && confirm('確定要從群組中移除此圖片嗎？')) {
+                imageItem.remove();
+                // Check if list is empty
+                const selectedList = document.getElementById('selectedImagesList');
+                if (selectedList.children.length === 0) {
+                    selectedList.innerHTML = '<p class="has-text-grey-light has-text-centered p-4">此群組尚無圖片</p>';
+                }
+            }
+        }
     });
+    
+    // Group image upload file input change
+    const groupImageUpload = document.getElementById('groupImageUpload');
+    if (groupImageUpload) {
+        groupImageUpload.addEventListener('change', function(e) {
+            const files = e.target.files;
+            const uploadButton = document.getElementById('uploadToGroupButton');
+            const fileNameDisplay = document.getElementById('groupUploadFileName');
+            
+            if (files && files.length > 0) {
+                fileNameDisplay.textContent = files.length === 1 ? files[0].name : `已選擇 ${files.length} 張圖片`;
+                uploadButton.disabled = false;
+            } else {
+                fileNameDisplay.textContent = '未選擇任何檔案';
+                uploadButton.disabled = true;
+            }
+        });
+    }
+    
+    // Upload to group button
+    const uploadToGroupButton = document.getElementById('uploadToGroupButton');
+    if (uploadToGroupButton) {
+        uploadToGroupButton.addEventListener('click', handleUploadToGroup);
+    }
+    
+    // Save group changes button
+    const saveGroupChangesButton = document.getElementById('saveGroupChangesButton');
+    if (saveGroupChangesButton) {
+        saveGroupChangesButton.addEventListener('click', handleSaveGroupChanges);
+    }
+    
+    // Cancel group changes button
+    const cancelGroupChangesButton = document.getElementById('cancelGroupChangesButton');
+    if (cancelGroupChangesButton) {
+        cancelGroupChangesButton.addEventListener('click', () => closeModal('editCarouselGroupModal'));
+    }
 
     // Event listeners for settings
     document.getElementById('globalSettingsForm').addEventListener('submit', handleGlobalSettings);

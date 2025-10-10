@@ -34,6 +34,12 @@ async function fetchMediaData() {
     }
     const data = await response.json();
     console.log(`Successfully fetched config for device ${currentDeviceId}:`, data);
+    console.log(`📊 Data summary:`, {
+      materials: data.materials?.length || 0,
+      assignments: data.assignments?.length || 0,
+      groups: data.groups?.length || 0,
+      settings: data.settings
+    });
     currentLayoutName = data.layout; // Store the current layout name
     return data;
   } catch (error) {
@@ -117,24 +123,53 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     container.innerHTML = '';
 
     const sectionAssignments = data.assignments.filter(a => a.section_key === sectionKey);
+    console.log(`📍 Section ${sectionKey}: found ${sectionAssignments.length} assignments`);
+    
     if (sectionAssignments.length === 0) return;
 
     const contentItems = [];
     let carouselOffset = 0;
     sectionAssignments.forEach(assignment => {
+        console.log(`  Processing assignment: type=${assignment.content_type}, content_id=${assignment.content_id}`);
+        
         if (assignment.content_type === 'single_media') {
             const material = data.materials.find(m => m.id === assignment.content_id);
-            if (material) contentItems.push(material);
+            if (material) {
+                console.log(`    ✅ Found single media: ${material.filename}`);
+                contentItems.push(material);
+            } else {
+                console.warn(`    ❌ Material not found: ${assignment.content_id}`);
+            }
         } else if (assignment.content_type === 'group_reference') {
             const group = data.groups.find(g => g.id === assignment.content_id);
+            console.log(`    Looking for group: ${assignment.content_id}`, group ? `Found: ${group.name}` : 'NOT FOUND');
+            
             if (group && group.materials) {
                 if (assignment.offset > 0) carouselOffset = assignment.offset;
-                contentItems.push(...group.materials);
+                console.log(`    Group has ${group.materials.length} materials:`, group.materials);
+                console.log(`    Available materials in data:`, data.materials.map(m => m.id));
+                
+                // group.materials is an array of material IDs, need to find actual material objects
+                group.materials.forEach(materialId => {
+                    const material = data.materials.find(m => m.id === materialId);
+                    if (material) {
+                        console.log(`      ✅ Found material: ${material.filename}`);
+                        contentItems.push(material);
+                    } else {
+                        console.warn(`      ❌ Material not found for ID: ${materialId}`);
+                    }
+                });
+            } else if (group && !group.materials) {
+                console.warn(`    ⚠️ Group found but has no materials array`);
             }
         }
     });
 
-    if (contentItems.length === 0) return;
+    console.log(`📦 Total content items collected: ${contentItems.length}`);
+    if (contentItems.length === 0) {
+        console.warn(`⚠️ No content items to display for ${sectionKey}`);
+        return;
+    }
 
     const carouselContainer = document.createElement('div');
     carouselContainer.className = 'carousel-container';
@@ -188,17 +223,28 @@ function updateAllSections(data) {
 // WebSocket initialization
 function initializeWebSocket() {
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+    console.log(`🔌 Connecting to WebSocket: ${wsUrl}`);
     const socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+        console.log(`✅ WebSocket connected successfully`);
+        console.log(`📡 Listening for updates to layout: ${currentLayoutName}`);
+    };
 
     socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        console.log(`📨 WebSocket message received:`, data);
+        
         if (data.type === 'ping') {
             socket.send(JSON.stringify({ type: 'pong' }));
         } else if (data.type === 'section_updated' || data.type === 'settings_updated') {
+            console.log(`🔔 Update notification: type=${data.type}, layout=${data.layout}, section=${data.section_key}`);
             // Only refresh if the update is for our current layout
             if (data.layout && data.layout === currentLayoutName) {
-                console.log(`Update received for current layout (${currentLayoutName}). Refreshing.`);
+                console.log(`✅ Update is for current layout (${currentLayoutName}). Refreshing...`);
                 fetchMediaData().then(updateAllSections);
+            } else {
+                console.log(`⏭️ Update is for different layout (${data.layout} vs ${currentLayoutName}). Ignoring.`);
             }
         } else if (data.type === 'device_assigned') {
             // Check if this device was reassigned
