@@ -96,9 +96,11 @@ interface CarouselGroup {
    - Can optimize later if needed
 
 ### Player Deployment
-- Raspberry Pi uses Electron app (separate repo)
+- Raspberry Pi uses Electron app (**separate independent project**)
+- Location: `~/Documents/mq-cms-electron-player` (NOT a submodule)
 - Device UUID stored in `~/.config/mq-cms-player/config.json`
 - Player loads `display.html?deviceId={uuid}` from Cloudflare Workers
+- See `ELECTRON_PLAYER.md` for details
 
 ## 📋 Pending Tasks
 
