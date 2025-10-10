@@ -611,7 +611,7 @@ async function handleMediaUpload(e) {
     if (mediaType === 'group_reference') {
         const groupId = formData.get('carousel_group_id');
         const sectionKey = formData.get('section_key');
-        const offset = parseInt(formData.get('carousel_offset') || '0');
+        const offset = parseInt(formData.get('offset') || '0');
         
         console.log('Group assignment request:', { groupId, sectionKey, offset, layout: appState.activeLayout });
         

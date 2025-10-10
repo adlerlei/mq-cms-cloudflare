@@ -415,6 +415,84 @@ export default {
 			}
 		}
 
+		// Handle group deletion with cascade delete of materials
+		if (url.pathname.match(/^\/api\/groups\/[^/]+$/) && request.method === 'DELETE') {
+			try {
+				const groupId = decodeURIComponent(url.pathname.replace('/api/groups/', ''));
+				const layoutName = url.searchParams.get('layout') || 'default';
+				
+				console.log(`[DELETE /api/groups] Deleting group ${groupId} from layout ${layoutName}`);
+				
+				// Get group info from Durable Object
+				const groupsResponse = await stub.fetch(`http://localhost/api/groups?layout=${layoutName}`);
+				const groups = await groupsResponse.json() as CarouselGroup[];
+				const group = groups.find(g => g.id === groupId);
+				
+				if (!group) {
+					return new Response(JSON.stringify({ error: '群組不存在' }), { 
+						status: 404, 
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+					});
+				}
+				
+				// Get all materials from Durable Object
+				const materialsResponse = await stub.fetch(`http://localhost/api/materials?layout=${layoutName}`);
+				const allMaterials = await materialsResponse.json() as MediaMaterial[];
+				
+				// Find materials that belong to this group
+				const groupMaterialIds = group.materials || [];
+				const materialsToDelete = allMaterials.filter(m => groupMaterialIds.includes(m.id));
+				
+				console.log(`[DELETE /api/groups] Found ${materialsToDelete.length} materials to delete`);
+				
+				// Delete files from R2
+				for (const material of materialsToDelete) {
+					try {
+						await env.MEDIA_BUCKET.delete(material.filename);
+						console.log(`[DELETE /api/groups] Deleted R2 file: ${material.filename}`);
+					} catch (error) {
+						console.error(`[DELETE /api/groups] Failed to delete R2 file ${material.filename}:`, error);
+					}
+				}
+				
+				// Delete materials from Durable Object
+				for (const material of materialsToDelete) {
+					await stub.fetch(`http://localhost/api/materials/${material.id}?layout=${layoutName}`, { method: 'DELETE' });
+				}
+				
+				// Delete assignments that reference this group
+				const assignmentsResponse = await stub.fetch(`http://localhost/api/assignments?layout=${layoutName}`);
+				const assignments = await assignmentsResponse.json() as Assignment[];
+				const groupAssignments = assignments.filter(a => a.content_type === 'group_reference' && a.content_id === groupId);
+				
+				for (const assignment of groupAssignments) {
+					await stub.fetch(`http://localhost/api/assignments/${assignment.id}?layout=${layoutName}`, { method: 'DELETE' });
+					console.log(`[DELETE /api/groups] Deleted assignment ${assignment.id} for section ${assignment.section_key}`);
+				}
+				
+				// Finally, delete the group itself
+				await stub.fetch(`http://localhost/api/groups/${groupId}?layout=${layoutName}`, { method: 'DELETE' });
+				
+				console.log(`[DELETE /api/groups] Successfully deleted group ${groupId} and ${materialsToDelete.length} materials`);
+				
+				return new Response(JSON.stringify({ 
+					success: true, 
+					message: `已刪除群組及其包含的 ${materialsToDelete.length} 個媒體檔案` 
+				}), { 
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+				});
+			} catch (error) {
+				console.error('[DELETE /api/groups] Error:', error);
+				return new Response(JSON.stringify({ 
+					error: '刪除群組失敗', 
+					message: error instanceof Error ? error.message : '未知錯誤' 
+				}), { 
+					status: 500, 
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+				});
+			}
+		}
+
 		// Handle media serving from R2
 		if (url.pathname.startsWith('/media/')) {
 			const filename = url.pathname.replace('/media/', '');

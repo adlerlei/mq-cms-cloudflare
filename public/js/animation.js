@@ -69,6 +69,7 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
     }
 
     let currentIndex = Math.max(0, Math.min(startOffset, items.length - 1));
+    console.log(`🔄 Carousel initialized: startOffset=${startOffset}, items.length=${items.length}, currentIndex=${currentIndex}`);
     inner.style.transition = "none";
     inner.style.transform = `translateX(-${currentIndex * 100}%)`;
 
@@ -145,7 +146,10 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
             console.log(`    Looking for group: ${assignment.content_id}`, group ? `Found: ${group.name}` : 'NOT FOUND');
             
             if (group && group.materials) {
-                if (assignment.offset > 0) carouselOffset = assignment.offset;
+                if (assignment.offset !== undefined && assignment.offset !== null) {
+                    carouselOffset = assignment.offset;
+                    console.log(`    📌 Setting carousel offset to: ${assignment.offset}`);
+                }
                 console.log(`    Group has ${group.materials.length} materials:`, group.materials);
                 console.log(`    Available materials in data:`, data.materials.map(m => m.id));
                 
@@ -197,6 +201,7 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     });
 
     if (contentItems.length > 0 && slideInterval > 0) {
+        console.log(`🎯 Initializing carousel for ${sectionKey} with offset=${carouselOffset}, total items=${contentItems.length}`);
         initializeGenericCarousel(carouselContainer, slideInterval, carouselOffset);
     }
 }
