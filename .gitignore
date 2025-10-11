@@ -5,6 +5,8 @@
 .vscode/
 Thumbs.db
 工作日誌.md
+.claude
+worker-configuration.d.ts
 
 # Node / Javascript
 node_modules/

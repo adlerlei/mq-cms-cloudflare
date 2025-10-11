@@ -14,12 +14,27 @@ class_name = "MessageBroadcaster"
 binding = "MEDIA_BUCKET"
 bucket_name = "mq-cms-media"
 
-# 綁定靜態資源目錄
+# 靜態資源配置 - 正確的 assets 語法
 [assets]
 directory = "./public"
+binding = "ASSETS"
 
 # 【修正這個區塊】
 # 這次我們使用一個新的 tag (v2) 來強制執行新的遷移
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["MessageBroadcaster"]
+
+# ==========================================
+#  從指令產生的 KV 設定 (Final KV Settings)
+# ==========================================
+
+# 用於儲存版面 (Layouts) 的資料
+[[kv_namespaces]]
+binding = "layout" 
+id = "c2832969aef948f1b080d217eb57142f"
+
+# 用於儲存設備 (Devices) 指派關係的資料
+[[kv_namespaces]]
+binding = "device"
+id = "df78697054c74d40953e1ff58cea5a0e"

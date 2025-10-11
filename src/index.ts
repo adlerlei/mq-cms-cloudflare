@@ -11,7 +11,7 @@ interface MediaMaterial {
 	url: string;
 	size?: number;
 	uploaded_at: string;
-	group_id?: string; // 標記群組專屬圖片
+	group_id?: string;
 }
 
 interface Assignment {
@@ -36,18 +36,36 @@ interface Settings {
 	footer_interval: number;
 }
 
-// 新增：區塊更新通知接口
+interface Device {
+	id: string;
+	name?: string;
+	address?: string;
+	notes?: string;
+	layoutName: string;
+	last_seen: string;
+	created_at?: string;
+}
+
+interface Layout {
+	name: string;
+	created_at: string;
+}
+
 interface SectionUpdateNotification {
 	type: 'section_updated';
+	layout: string;
 	section_key: string;
 	action: 'upload' | 'delete' | 'assign' | 'unassign' | 'group_update';
 	content_type?: 'single_media' | 'group_reference';
 	content_id?: string;
 }
 
-// 輔助函數：生成唯一ID
 function generateId(): string {
 	return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
+function layoutKey(layoutName: string, key: string): string {
+	return `layout_${layoutName}_${key}`;
 }
 
 // ====================================================
@@ -56,1138 +74,453 @@ function generateId(): string {
 export class MessageBroadcaster {
 	private connections: Set<WebSocket>;
 	private state: DurableObjectState;
-	private pingInterval: number = 30000; // 30秒發送一次ping
+	private pingInterval: number = 30000;
 
 	constructor(state: DurableObjectState) {
 		this.state = state;
 		this.connections = new Set();
-		// 設定心跳alarm
 		this.setupHeartbeat();
 	}
 
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
+		const layoutName = url.searchParams.get('layout') || 'default';
 
-		// 處理材料相關API
-		if (url.pathname === '/api/materials') {
-			if (request.method === 'GET') {
-				const materials = await this.getMaterials();
-				return new Response(JSON.stringify(materials), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} else if (request.method === 'POST') {
+		const handleApi = async (path: string, method: string): Promise<Response | null> => {
+			if (path === '/api/materials' && method === 'GET') {
+				const materials = await this.getMaterials(layoutName);
+				return new Response(JSON.stringify(materials), { headers: { 'Content-Type': 'application/json' } });
+			}
+			if (path === '/api/materials' && method === 'POST') {
 				const material = await request.json() as MediaMaterial;
-				await this.saveMaterial(material);
-				
-				// 注意: 這裡不發送全域通知，因為新材料還沒有被指派到任何區塊
-				
-				return new Response(JSON.stringify({ success: true }), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
+				await this.saveMaterial(layoutName, material);
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
 			}
-		} else if (url.pathname.startsWith('/api/materials/') && request.method === 'DELETE') {
-			const filename = decodeURIComponent(url.pathname.replace('/api/materials/', ''));
-			
-			// 在刪除前找出所有使用此媒體的區塊和群組
-			const materials = await this.getMaterials();
-			const materialToDelete = materials.find(m => m.filename === filename || m.id === filename);
-			let affectedSections: string[] = [];
-			let affectedGroups: string[] = [];
-			
-			if (materialToDelete) {
-				// 找出直接指派到區塊的媒體
-				affectedSections = await this.getAffectedSections(materialToDelete.id, 'single_media');
-				
-				// 找出包含此媒體的群組，然後找出這些群組被指派到的區塊
-				const groups = await this.getGroups();
-				for (const group of groups) {
-					if (group.materials && group.materials.some(m => m.id === materialToDelete.id)) {
-						affectedGroups.push(group.id);
-						// 找出使用這個群組的區塊
-						const groupSections = await this.getAffectedSections(group.id, 'group_reference');
-						affectedSections.push(...groupSections);
-					}
-				}
+			if (path.startsWith('/api/materials/') && method === 'DELETE') {
+				const materialId = decodeURIComponent(path.replace('/api/materials/', ''));
+				await this.deleteMaterial(layoutName, materialId);
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
 			}
-			
-			// 刪除材料
-			await this.deleteMaterial(filename);
-			
-			// 從包含此材料的群組中移除該材料
-			if (materialToDelete && affectedGroups.length > 0) {
-				const groups = await this.getGroups();
-				for (const groupId of affectedGroups) {
-					const group = groups.find(g => g.id === groupId);
-					if (group && group.materials) {
-						group.materials = group.materials.filter(m => m.id !== materialToDelete.id);
-						await this.updateGroup(groupId, group);
-						console.log(`已從群組 ${group.name} 中移除圖片 ${materialToDelete.filename}`);
-					}
-				}
+			if (path === '/api/assignments' && method === 'GET') {
+				const assignments = await this.getAssignments(layoutName);
+				return new Response(JSON.stringify(assignments), { headers: { 'Content-Type': 'application/json' } });
 			}
-			
-			// 為每個受影響的區塊發送更新通知
-			const uniqueSections = [...new Set(affectedSections)];
-			uniqueSections.forEach(sectionKey => {
-				if (affectedGroups.length > 0) {
-					// 如果涉及群組，發送群組更新通知
-					this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference');
-				} else {
-					// 如果是直接指派的媒體，發送刪除通知
-					this.broadcastSectionUpdate(sectionKey, 'delete', 'single_media', materialToDelete?.id);
-				}
-			});
-			
-			return new Response(JSON.stringify({ success: true }), {
-				headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-			});
-		}
-
-		// 處理指派相關API
-		else if (url.pathname === '/api/assignments') {
-			if (request.method === 'GET') {
-				const assignments = await this.getAssignments();
-				return new Response(JSON.stringify(assignments), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} else if (request.method === 'POST') {
-				try {
-					const formData = await request.formData();
-					const sectionKey = formData.get('section_key') as string;
-					const contentType = formData.get('content_type') as 'single_media' | 'group_reference';
-					const contentId = formData.get('content_id') as string;
-					const offsetStr = formData.get('offset') as string;
-					
-					if (!sectionKey || !contentType || !contentId) {
-						return new Response(JSON.stringify({ 
-							error: 'Missing required fields', 
-							details: { sectionKey, contentType, contentId } 
-						}), {
-							status: 400,
-							headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-						});
-					}
-					
-					const assignment: Assignment = {
-						id: generateId(),
-						section_key: sectionKey,
-						content_type: contentType,
-						content_id: contentId,
-						offset: offsetStr ? parseInt(offsetStr, 10) : undefined,
-						created_at: new Date().toISOString()
-					};
-					
-					await this.saveAssignment(assignment);
-					
-					// 發送精確的區塊更新通知
-					this.broadcastSectionUpdate(
-						assignment.section_key, 
-						'assign', 
-						assignment.content_type, 
-						assignment.content_id
-					);
-					
-					return new Response(JSON.stringify({ success: true, assignment }), {
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				} catch (error: any) {
-					console.error('Error creating assignment:', error);
-					return new Response(JSON.stringify({ 
-						error: 'Failed to create assignment', 
-						details: error.message 
-					}), {
-						status: 500,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
+			if (path === '/api/assignments' && method === 'POST') {
+				const assignment = await request.json() as Assignment;
+				await this.saveAssignment(layoutName, assignment);
+				this.broadcastSectionUpdate(layoutName, assignment.section_key, 'assign', assignment.content_type, assignment.content_id);
+				return new Response(JSON.stringify({ success: true, assignment }), { headers: { 'Content-Type': 'application/json' } });
 			}
-		} else if (url.pathname.startsWith('/api/assignments/') && request.method === 'DELETE') {
-			try {
-				const assignmentId = url.pathname.replace('/api/assignments/', '');
-				if (!assignmentId) {
-					return new Response(JSON.stringify({ error: 'Assignment ID is required' }), {
-						status: 400,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
-				
-				// 取得要被刪除的指派信息以便發送更新通知（必須在刪除前獲取）
-				const assignments = await this.getAssignments();
-				const assignmentToDelete = assignments.find(a => a.id === assignmentId);
-				
-				await this.deleteAssignment(assignmentId);
-				
-				if (assignmentToDelete) {
-					// 發送精確的區塊更新通知
-					this.broadcastSectionUpdate(
-						assignmentToDelete.section_key,
-						'unassign',
-						assignmentToDelete.content_type,
-						assignmentToDelete.content_id
-					);
-				}
-				
-				// 精細化通知已在上面發送，不需要全域播放列表更新通知
-				
-				return new Response(JSON.stringify({ success: true }), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} catch (error: any) {
-				console.error('Error deleting assignment:', error);
-				return new Response(JSON.stringify({ 
-					error: 'Failed to delete assignment', 
-					details: error.message 
-				}), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
+			if (path.startsWith('/api/assignments/') && method === 'DELETE') {
+				const assignmentId = decodeURIComponent(path.replace('/api/assignments/', ''));
+                const assignments = await this.getAssignments(layoutName);
+                const assignmentToDelete = assignments.find(a => a.id === assignmentId);
+				await this.deleteAssignment(layoutName, assignmentId);
+                if(assignmentToDelete) {
+				    this.broadcastSectionUpdate(layoutName, assignmentToDelete.section_key, 'unassign', assignmentToDelete.content_type, assignmentToDelete.content_id);
+                }
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
 			}
-		}
-
-		// 處理群組相關API
-		else if (url.pathname === '/api/groups') {
-			if (request.method === 'GET') {
-				const groups = await this.getGroups();
-				return new Response(JSON.stringify(groups), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} else if (request.method === 'POST') {
-				try {
-					const formData = await request.formData();
-					const groupName = formData.get('group_name') as string;
-					
-					if (!groupName || !groupName.trim()) {
-						return new Response(JSON.stringify({ 
-							error: 'Group name is required' 
-						}), {
-							status: 400,
-							headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-						});
-					}
-					
-					const group: CarouselGroup = {
-						id: generateId(),
-						name: groupName.trim(),
-						materials: [],
-						created_at: new Date().toISOString()
-					};
-					
-					await this.saveGroup(group);
-					
-					// 找出使用這個群組的所有區塊並發送更新通知
-					const affectedSections = await this.getAffectedSections(group.id, 'group_reference');
-					affectedSections.forEach(sectionKey => {
-						this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', group.id);
-					});
-					
-				// 精細化通知已在上面發送，不需要全域群組更新通知
-					
-					return new Response(JSON.stringify({ success: true, group }), {
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				} catch (error: any) {
-					console.error('Error creating group:', error);
-					return new Response(JSON.stringify({ 
-						error: 'Failed to create group', 
-						details: error.message 
-					}), {
-						status: 500,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
+			if (path === '/api/groups' && method === 'GET') {
+				const groups = await this.getGroups(layoutName);
+				return new Response(JSON.stringify(groups), { headers: { 'Content-Type': 'application/json' } });
 			}
-		} else if (url.pathname.startsWith('/api/groups/') && request.method === 'DELETE') {
-			try {
-				const groupId = url.pathname.replace('/api/groups/', '');
-				if (!groupId) {
-					return new Response(JSON.stringify({ error: 'Group ID is required' }), {
-						status: 400,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
-				
-				// 在刪除之前，先找出使用此群組的所有區塊並發送刪除通知
-				const affectedSections = await this.getAffectedSections(groupId, 'group_reference');
-				console.log(`群組 ${groupId} 即將被刪除，受影響的區塊:`, affectedSections);
-				
-				// 先刪除所有相關的指派
-				const assignments = await this.getAssignments();
-				const groupAssignments = assignments.filter(a => a.content_id === groupId && a.content_type === 'group_reference');
-				for (const assignment of groupAssignments) {
-					await this.deleteAssignment(assignment.id);
-				}
-				
-				// 獲取群組信息以取得群組內的材料
-				const groups = await this.getGroups();
-				const targetGroup = groups.find(g => g.id === groupId);
-				
-				if (targetGroup && targetGroup.materials) {
-					// 刪除群組內的所有材料
-					for (const material of targetGroup.materials) {
-						await this.deleteMaterial(material.id);
-					}
-				}
-				
-				// 刪除群組本身
-				await this.deleteGroup(groupId);
-				
-				// 為每個受影響的區塊發送群組刪除通知
-				affectedSections.forEach(sectionKey => {
-					this.broadcastSectionUpdate(sectionKey, 'delete', 'group_reference', groupId);
-					console.log(`發送群組刪除通知給區塊: ${sectionKey}`);
-				});
-				
-				return new Response(JSON.stringify({ success: true }), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} catch (error: any) {
-				console.error('Error deleting group:', error);
-				return new Response(JSON.stringify({ 
-					error: 'Failed to delete group', 
-					details: error.message 
-				}), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
+			if (path === '/api/groups' && method === 'POST') {
+				const group = await request.json() as CarouselGroup;
+				await this.saveGroup(layoutName, group);
+				return new Response(JSON.stringify({ success: true, group }), { headers: { 'Content-Type': 'application/json' } });
 			}
-		// 群組圖片上傳處理邏輯將在主 Worker 中處理
-		// 這裡我們不提供上傳端點，因為需要訪問 MEDIA_BUCKET
-		} else if (url.pathname.match(/\/api\/groups\/[^\/]+\/images$/) && request.method === 'PUT') {
-			const groupId = url.pathname.split('/')[3];
-			const requestData = await request.json() as { image_ids: string[] };
-			const { image_ids } = requestData;
-			const groups = await this.getGroups();
-			const materials = await this.getMaterials();
-			
-			const group = groups.find(g => g.id === groupId);
-			if (group) {
-				group.materials = image_ids.map((id: string) => 
-					materials.find(m => m.id === id)
-				).filter(Boolean) as MediaMaterial[];
-				await this.updateGroup(groupId, group);
-				
-				// 找出使用這個群組的所有區塊並發送更新通知
-				const affectedSections = await this.getAffectedSections(groupId, 'group_reference');
-				affectedSections.forEach(sectionKey => {
-					this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', groupId);
+            if (path.startsWith('/api/groups/') && method === 'PUT') {
+                const groupId = decodeURIComponent(path.replace('/api/groups/', ''));
+                const updatedGroup = await request.json() as CarouselGroup;
+                await this.updateGroup(layoutName, groupId, updatedGroup);
+				this.getAffectedSections(layoutName, groupId, 'group_reference').then(sections => {
+					sections.forEach(sectionKey => this.broadcastSectionUpdate(layoutName, sectionKey, 'group_update', 'group_reference', groupId));
 				});
-				
-				// 精細化通知已在上面發送，只有真正使用此群組的區塊會收到更新
-				// 不需要全域播放列表更新通知
+                return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+            }
+			if (path.startsWith('/api/groups/') && method === 'DELETE') {
+				const groupId = decodeURIComponent(path.replace('/api/groups/', ''));
+				await this.deleteGroup(layoutName, groupId);
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
 			}
-			
-			return new Response(JSON.stringify({ success: true }), {
-				headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-			});
-		}
-		
-		// 處理群組材料相關API
-		else if (url.pathname.match(/\/api\/groups\/[^\/]+\/materials$/) && request.method === 'POST') {
-			try {
-				const groupId = url.pathname.split('/')[3];
-				const formData = await request.formData();
-				const action = formData.get('action') as string;
-				
-				if (action === 'add_materials') {
-					const materialIds = formData.getAll('material_ids[]') as string[];
-					const groups = await this.getGroups();
-					const materials = await this.getMaterials();
-					
-					const group = groups.find(g => g.id === groupId);
-					if (!group) {
-						return new Response(JSON.stringify({ error: 'Group not found' }), {
-							status: 404,
-							headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-						});
-					}
-					
-					// 添加新材料到群組
-					const newMaterials = materialIds.map(id => 
-						materials.find(m => m.id === id)
-					).filter(Boolean) as MediaMaterial[];
-					
-					group.materials = [...(group.materials || []), ...newMaterials];
-					await this.updateGroup(groupId, group);
-					
-					// 找出使用這個群組的所有區塊並發送更新通知
-					const affectedSections = await this.getAffectedSections(groupId, 'group_reference');
-					affectedSections.forEach(sectionKey => {
-						this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', groupId);
-					});
-					
-					// 精細化通知已在上面發送，只有真正使用此群組的區塊會收到更新
-					// 不需要全域群組更新通知
-					
-					return new Response(JSON.stringify({ success: true, group }), {
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
-				
-				return new Response(JSON.stringify({ error: 'Invalid action' }), {
-					status: 400,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} catch (error: any) {
-				console.error('Error adding materials to group:', error);
-				return new Response(JSON.stringify({ 
-					error: 'Failed to add materials to group', 
-					details: error.message 
-				}), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
+			if (path === '/api/settings' && method === 'GET') {
+				const settings = await this.getSettings(layoutName);
+				return new Response(JSON.stringify(settings), { headers: { 'Content-Type': 'application/json' } });
 			}
-		} else if (url.pathname.match(/\/api\/groups\/[^\/]+\/materials$/) && request.method === 'PUT') {
-			try {
-				const groupId = url.pathname.split('/')[3];
-				const formData = await request.formData();
-				const action = formData.get('action') as string;
-				
-				if (action === 'update_materials') {
-					const materialIds = formData.getAll('material_ids[]') as string[];
-					const groups = await this.getGroups();
-					const materials = await this.getMaterials();
-					
-					const group = groups.find(g => g.id === groupId);
-					if (!group) {
-						return new Response(JSON.stringify({ error: 'Group not found' }), {
-							status: 404,
-							headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-						});
-					}
-					
-					// 更新群組材料
-					group.materials = materialIds.map(id => 
-						materials.find(m => m.id === id)
-					).filter(Boolean) as MediaMaterial[];
-					
-					await this.updateGroup(groupId, group);
-					
-					// 找出使用這個群組的所有區塊並發送更新通知
-					const affectedSections = await this.getAffectedSections(groupId, 'group_reference');
-					affectedSections.forEach(sectionKey => {
-						this.broadcastSectionUpdate(sectionKey, 'group_update', 'group_reference', groupId);
-					});
-					
-					// 精細化通知已在上面發送，只有真正使用此群組的區塊會收到更新
-					// 不需要全域群組更新通知
-					
-					return new Response(JSON.stringify({ success: true, group }), {
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
-				
-				return new Response(JSON.stringify({ error: 'Invalid action' }), {
-					status: 400,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} catch (error: any) {
-				console.error('Error updating group materials:', error);
-				return new Response(JSON.stringify({ 
-					error: 'Failed to update group materials', 
-					details: error.message 
-				}), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			}
-		}
-
-		// 處理 CORS 預檢請求
-		else if (request.method === 'OPTIONS') {
-			return new Response(null, {
-				status: 200,
-				headers: {
-					'Access-Control-Allow-Origin': '*',
-					'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-					'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-				}
-			});
-		}
-
-		// 處理登入API
-		else if (url.pathname === '/api/login' && request.method === 'POST') {
-			const { username, password } = await request.json();
-			
-			// 簡單的硬編碼認證 (生產環境應使用更安全的方式)
-			if (username === 'admin' && password === 'admin123') {
-				// 生成簡單的 JWT token (這裡只是模擬，生產環境需要真正的 JWT)
-				const token = btoa(JSON.stringify({ username, exp: Date.now() + 24 * 60 * 60 * 1000 }));
-				return new Response(JSON.stringify({ 
-					access_token: token,
-					message: '登入成功'
-				}), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} else {
-				return new Response(JSON.stringify({ 
-					message: '帳號或密碼錯誤'
-				}), {
-					status: 401,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			}
-		}
-
-		// 處理設定相關API
-		else if (url.pathname === '/api/settings') {
-			if (request.method === 'GET') {
-				const settings = await this.getSettings();
-				return new Response(JSON.stringify(settings), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} else if (request.method === 'PUT') {
+			if (path === '/api/settings' && method === 'PUT') {
 				const settings = await request.json() as Settings;
-				await this.saveSettings(settings);
-				
-				// 通知所有客戶端設定已更新
-				this.broadcast(JSON.stringify({ type: 'settings_updated' }));
-				
-				return new Response(JSON.stringify({ success: true }), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
+				await this.saveSettings(layoutName, settings);
+				this.broadcast(JSON.stringify({ type: 'settings_updated', layout: layoutName }));
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
 			}
-		}
+            // Global (non-layout-specific) endpoints
+			if (path === '/api/layouts' && method === 'GET') {
+				const layouts = await this.getLayouts();
+				return new Response(JSON.stringify(layouts), { headers: { 'Content-Type': 'application/json' } });
+			}
+			if (path === '/api/layouts' && method === 'POST') {
+				const newLayout = await request.json() as Layout;
+				await this.saveLayout(newLayout);
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+			}
+			if (path.startsWith('/api/layouts/') && method === 'DELETE') {
+				const name = decodeURIComponent(path.replace('/api/layouts/', ''));
+				if (name === 'default') return new Response('Cannot delete default layout', { status: 400 });
+				await this.deleteLayout(name);
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+			}
+			if (path === '/api/devices' && method === 'GET') {
+				const devices = await this.getDevices();
+				return new Response(JSON.stringify(devices), { headers: { 'Content-Type': 'application/json' } });
+			}
+			if (path.startsWith('/api/devices/') && method === 'DELETE') {
+				const deviceId = decodeURIComponent(path.replace('/api/devices/', ''));
+				await this.deleteDevice(deviceId);
+				this.broadcast(JSON.stringify({ type: 'device_deleted', deviceId }));
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+			}
+			if (path.startsWith('/api/devices/') && method === 'PUT') {
+				const deviceId = decodeURIComponent(path.replace('/api/devices/', ''));
+				const updates = await request.json() as Partial<Device>;
+				await this.updateDevice(deviceId, updates);
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+			}
+			if (path === '/api/assign' && method === 'POST') {
+				const device = await request.json() as Device;
+				await this.saveDevice(device);
+				this.broadcast(JSON.stringify({ type: 'device_assigned', deviceId: device.id, layoutName: device.layoutName }));
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+			}
+            if (path === '/api/login' && method === 'POST') {
+                const { username, password } = await request.json();
+                if (username === 'admin' && password === 'admin123') {
+                    const token = btoa(JSON.stringify({ username, exp: Date.now() + 24 * 60 * 60 * 1000 }));
+                    return new Response(JSON.stringify({ access_token: token, message: '登入成功' }), { headers: { 'Content-Type': 'application/json' } });
+                } else {
+                    return new Response(JSON.stringify({ message: '帳號或密碼錯誤' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+                }
+            }
+			return null;
+		};
+
+		const response = await handleApi(url.pathname, request.method);
+		if (response) return response;
 
 		if (request.headers.get('Upgrade') === 'websocket') {
-			const webSocketPair = new WebSocketPair();
-			const [client, server] = Object.values(webSocketPair);
-
+			const pair = new WebSocketPair();
+			const [client, server] = Object.values(pair);
 			server.accept();
 			this.connections.add(server);
-
-			const closeOrErrorHandler = () => {
-				this.connections.delete(server);
-				this.broadcast(JSON.stringify({ type: 'user_left', count: this.connections.size }));
-			};
-
-			server.addEventListener('close', closeOrErrorHandler);
-			server.addEventListener('error', closeOrErrorHandler);
-
-			// 監聽客戶端訊息，處理pong回應
-			server.addEventListener('message', (event) => {
-				try {
-					const data = JSON.parse(event.data);
-					if (data.type === 'pong') {
-						console.log('收到客戶端pong回應');
-						// 可以在這裡記錄客戶端的活躍狀態
-					}
-				} catch (error) {
-					console.warn('解析WebSocket訊息失敗:', error);
-				}
-			});
-
-			server.send(JSON.stringify({ type: 'welcome', count: this.connections.size }));
-			this.broadcast(JSON.stringify({ type: 'user_joined', count: this.connections.size }));
-
+			server.addEventListener('close', () => this.connections.delete(server));
+			server.addEventListener('error', () => this.connections.delete(server));
 			return new Response(null, { status: 101, webSocket: client });
-		} else if (request.method === 'POST' && url.pathname === '/api/message') {
-			const message = await request.text();
-			this.broadcast(message);
-			return new Response('Message broadcasted', { status: 200, headers: { 'Access-Control-Allow-Origin': '*' } });
-		} else if (request.method === 'POST' && url.pathname === '/api/playlist_updated') {
-			// 處理播放列表更新的內部廣播
-			const message = JSON.stringify({ type: 'playlist_updated' });
-			this.broadcast(message);
-			return new Response('Playlist update broadcasted', { status: 200, headers: { 'Access-Control-Allow-Origin': '*' } });
-		} else if (url.pathname === '/stats') {
-			return new Response(JSON.stringify({ connectionCount: this.connections.size }), {
-				headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-			});
 		}
 
 		return new Response('Not found', { status: 404 });
 	}
 
 	private broadcast(message: string) {
-		for (const conn of this.connections) {
-			if (conn.readyState === WebSocket.READY_STATE_OPEN) {
-				conn.send(message);
-			}
-		}
+		this.connections.forEach(conn => {
+			if (conn.readyState === WebSocket.READY_STATE_OPEN) conn.send(message);
+		});
 	}
 
-	// 新增：廣播區塊更新通知
-	private broadcastSectionUpdate(sectionKey: string, action: string, contentType?: string, contentId?: string) {
-		const notification: SectionUpdateNotification = {
-			type: 'section_updated',
-			section_key: sectionKey,
-			action: action as any,
-			content_type: contentType as any,
-			content_id: contentId
-		};
+	private broadcastSectionUpdate(layout: string, sectionKey: string, action: string, contentType?: string, contentId?: string) {
+		const notification: SectionUpdateNotification = { type: 'section_updated', layout, section_key: sectionKey, action: action as any, content_type: contentType as any, content_id: contentId };
 		this.broadcast(JSON.stringify(notification));
-		console.log(`📢 廣播區塊更新通知: ${sectionKey} - ${action}`);
 	}
 
-	// 新增：根據指派找出受影響的區塊
-	private async getAffectedSections(contentId: string, contentType: 'single_media' | 'group_reference'): Promise<string[]> {
-		const assignments = await this.getAssignments();
-		return assignments
-			.filter(assignment => 
-				assignment.content_id === contentId && 
-				assignment.content_type === contentType
-			)
-			.map(assignment => assignment.section_key);
+	private async getAffectedSections(layoutName: string, contentId: string, contentType: 'single_media' | 'group_reference'): Promise<string[]> {
+		const assignments = await this.getAssignments(layoutName);
+		return assignments.filter(a => a.content_id === contentId && a.content_type === contentType).map(a => a.section_key);
 	}
 
-	// 數據存儲方法
-	async getMaterials(): Promise<MediaMaterial[]> {
-		const materials = await this.state.storage.get('materials') || [];
-		return materials as MediaMaterial[];
-	}
+	// Storage methods... (already implemented in previous step)
+	async getMaterials(layoutName: string): Promise<MediaMaterial[]> { const key = layoutKey(layoutName, 'materials'); return (await this.state.storage.get<MediaMaterial[]>(key)) || []; }
+	async saveMaterial(layoutName: string, material: MediaMaterial): Promise<void> { const materials = await this.getMaterials(layoutName); materials.push(material); await this.state.storage.put(layoutKey(layoutName, 'materials'), materials); }
+	async deleteMaterial(layoutName: string, materialId: string): Promise<void> { const materials = await this.getMaterials(layoutName); const filtered = materials.filter(m => m.id !== materialId); await this.state.storage.put(layoutKey(layoutName, 'materials'), filtered); }
+	async getAssignments(layoutName: string): Promise<Assignment[]> { const key = layoutKey(layoutName, 'assignments'); return (await this.state.storage.get<Assignment[]>(key)) || []; }
+	async saveAssignment(layoutName: string, assignment: Assignment): Promise<void> { const assignments = await this.getAssignments(layoutName); assignments.push(assignment); await this.state.storage.put(layoutKey(layoutName, 'assignments'), assignments); }
+	async deleteAssignment(layoutName: string, assignmentId: string): Promise<void> { const assignments = await this.getAssignments(layoutName); const filtered = assignments.filter(a => a.id !== assignmentId); await this.state.storage.put(layoutKey(layoutName, 'assignments'), filtered); }
+	async getGroups(layoutName: string): Promise<CarouselGroup[]> { const key = layoutKey(layoutName, 'groups'); return (await this.state.storage.get<CarouselGroup[]>(key)) || []; }
+	async saveGroup(layoutName: string, group: CarouselGroup): Promise<void> { const groups = await this.getGroups(layoutName); groups.push(group); await this.state.storage.put(layoutKey(layoutName, 'groups'), groups); }
+	async updateGroup(layoutName: string, groupId: string, updatedGroup: CarouselGroup): Promise<void> { const groups = await this.getGroups(layoutName); const index = groups.findIndex(g => g.id === groupId); if (index !== -1) { groups[index] = updatedGroup; await this.state.storage.put(layoutKey(layoutName, 'groups'), groups); } }
+	async deleteGroup(layoutName: string, groupId: string): Promise<void> { const groups = await this.getGroups(layoutName); const filtered = groups.filter(g => g.id !== groupId); await this.state.storage.put(layoutKey(layoutName, 'groups'), filtered); }
+	async getSettings(layoutName: string): Promise<Settings> { const key = layoutKey(layoutName, 'settings'); return (await this.state.storage.get<Settings>(key)) || { header_interval: 5, carousel_interval: 6, footer_interval: 7 }; }
+	async saveSettings(layoutName: string, settings: Settings): Promise<void> { await this.state.storage.put(layoutKey(layoutName, 'settings'), settings); }
+	async getLayouts(): Promise<Layout[]> { const layouts = await this.state.storage.get<Layout[]>('layouts') || []; if (!layouts.some(l => l.name === 'default')) { layouts.unshift({ name: 'default', created_at: new Date().toISOString() }); await this.state.storage.put('layouts', layouts); } return layouts; }
+	async saveLayout(layout: Layout): Promise<void> { const layouts = await this.getLayouts(); if (!layouts.some(l => l.name === layout.name)) { layouts.push(layout); await this.state.storage.put('layouts', layouts); } }
+	async deleteLayout(layoutName: string): Promise<void> { let layouts = await this.getLayouts(); layouts = layouts.filter(l => l.name !== layoutName); await this.state.storage.put('layouts', layouts); }
+	async getDevices(): Promise<Device[]> { return (await this.state.storage.get<Device[]>('devices')) || []; }
+	async saveDevice(device: Device): Promise<void> { let devices = await this.getDevices(); const index = devices.findIndex(d => d.id === device.id); if (index !== -1) { devices[index] = { ...devices[index], ...device }; } else { devices.push({ ...device, created_at: device.created_at || new Date().toISOString() }); } await this.state.storage.put('devices', devices); }
+	async updateDevice(deviceId: string, updates: Partial<Device>): Promise<void> { let devices = await this.getDevices(); const index = devices.findIndex(d => d.id === deviceId); if (index !== -1) { devices[index] = { ...devices[index], ...updates }; await this.state.storage.put('devices', devices); } }
+	async deleteDevice(deviceId: string): Promise<void> { let devices = await this.getDevices(); devices = devices.filter(d => d.id !== deviceId); await this.state.storage.put('devices', devices); }
 
-	async saveMaterial(material: MediaMaterial): Promise<void> {
-		const materials = await this.getMaterials();
-		materials.push(material);
-		await this.state.storage.put('materials', materials);
-	}
-
-	async deleteMaterial(materialId: string): Promise<void> {
-		const materials = await this.getMaterials();
-		// 可以根據ID或filename刪除
-		const filtered = materials.filter(m => m.id !== materialId && m.filename !== materialId);
-		await this.state.storage.put('materials', filtered);
-	}
-
-	async getAssignments(): Promise<Assignment[]> {
-		const assignments = await this.state.storage.get('assignments') || [];
-		return assignments as Assignment[];
-	}
-
-	async saveAssignment(assignment: Assignment): Promise<void> {
-		const assignments = await this.getAssignments();
-		assignments.push(assignment);
-		await this.state.storage.put('assignments', assignments);
-	}
-
-	async deleteAssignment(assignmentId: string): Promise<void> {
-		const assignments = await this.getAssignments();
-		const filtered = assignments.filter(a => a.id !== assignmentId);
-		await this.state.storage.put('assignments', filtered);
-	}
-
-	async getGroups(): Promise<CarouselGroup[]> {
-		const groups = await this.state.storage.get('groups') || [];
-		return groups as CarouselGroup[];
-	}
-
-	async saveGroup(group: CarouselGroup): Promise<void> {
-		const groups = await this.getGroups();
-		groups.push(group);
-		await this.state.storage.put('groups', groups);
-	}
-
-	async updateGroup(groupId: string, updatedGroup: CarouselGroup): Promise<void> {
-		const groups = await this.getGroups();
-		const index = groups.findIndex(g => g.id === groupId);
-		if (index !== -1) {
-			groups[index] = updatedGroup;
-			await this.state.storage.put('groups', groups);
-		}
-	}
-
-	async deleteGroup(groupId: string): Promise<void> {
-		const groups = await this.getGroups();
-		const filtered = groups.filter(g => g.id !== groupId);
-		await this.state.storage.put('groups', filtered);
-	}
-
-	async getSettings(): Promise<Settings> {
-		const settings = await this.state.storage.get('settings') || {
-			header_interval: 5,
-			carousel_interval: 6,
-			footer_interval: 7
-		};
-		return settings as Settings;
-	}
-
-	async saveSettings(settings: Settings): Promise<void> {
-		await this.state.storage.put('settings', settings);
-	}
-
-	// 設定心跳機制
-	private async setupHeartbeat(): Promise<void> {
-		// 設定alarm在30秒後觸發
-		const currentAlarm = await this.state.storage.getAlarm();
-		if (currentAlarm === null) {
-			await this.state.storage.setAlarm(Date.now() + this.pingInterval);
-		}
-	}
-
-	// Durable Object alarm處理器
-	async alarm(): Promise<void> {
-		console.log('🏓 發送心跳ping訊息給所有客戶端');
-		
-		// 發送ping訊息給所有連接的客戶端
-		this.broadcast(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
-		
-		// 清理已斷線的連接
-		const deadConnections = new Set<WebSocket>();
-		for (const conn of this.connections) {
-			if (conn.readyState !== WebSocket.READY_STATE_OPEN) {
-				deadConnections.add(conn);
-			}
-		}
-		
-		// 移除已斷線的連接
-		for (const deadConn of deadConnections) {
-			this.connections.delete(deadConn);
-			console.log('清理已斷線的WebSocket連接');
-		}
-		
-		// 設定下一次alarm
-		await this.state.storage.setAlarm(Date.now() + this.pingInterval);
-	}
+	private async setupHeartbeat(): Promise<void> { if (await this.state.storage.getAlarm() === null) { await this.state.storage.setAlarm(Date.now() + this.pingInterval); } }
+	async alarm(): Promise<void> { this.broadcast(JSON.stringify({ type: 'ping' })); await this.state.storage.setAlarm(Date.now() + this.pingInterval); }
 }
 
 // ====================================================
 // Worker Entrypoint
 // ====================================================
-
-export interface Env {
-	ASSETS: Fetcher;
-	MESSAGE_BROADCASTER: DurableObjectNamespace;
-	MEDIA_BUCKET: R2Bucket; // R2 儲存桶綁定
-}
-
-// 輔助函數：獲取文件類型
-function getFileType(filename: string): 'image' | 'video' {
-	const ext = filename.toLowerCase().split('.').pop() || '';
-	const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-	const videoExts = ['mp4', 'webm', 'mov', 'avi'];
-	
-	if (imageExts.includes(ext)) return 'image';
-	if (videoExts.includes(ext)) return 'video';
-	return 'image'; // 默認為圖片
-}
+export interface Env { ASSETS: Fetcher; MESSAGE_BROADCASTER: DurableObjectNamespace; MEDIA_BUCKET: R2Bucket; VITEST_POOL_ID?: string; }
+function getFileType(filename: string): 'image' | 'video' { const ext = (filename.split('.').pop() || '').toLowerCase(); if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image'; if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) return 'video'; return 'image'; }
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
+		const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
+		const stub = env.MESSAGE_BROADCASTER.get(id);
 
-		// 處理 CORS 預檢請求
 		if (request.method === 'OPTIONS') {
-			return new Response(null, {
-				status: 200,
-				headers: {
-					'Access-Control-Allow-Origin': '*',
-					'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-					'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+			return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' } });
+		}
+
+		if (url.pathname === '/api/config') {
+			const deviceId = url.searchParams.get('deviceId');
+			if (!deviceId) return new Response('deviceId is required', { status: 400 });
+
+			// Determine layout name based on device ID
+			let layoutName = 'default';
+			if (deviceId.startsWith('admin-view-') || deviceId.startsWith('preview-')) {
+				// Extract layout name from admin-view-{layoutName} or preview-{layoutName}
+				layoutName = deviceId.replace('admin-view-', '').replace('preview-', '');
+			} else {
+				// For real devices, lookup their assigned layout
+				const devicesResponse = await stub.fetch('http://localhost/api/devices');
+				const devices = await devicesResponse.json() as Device[];
+				const device = devices.find(d => d.id === deviceId);
+				layoutName = device ? device.layoutName : 'default';
+
+				// Auto-assign for real devices
+				if (!env.VITEST_POOL_ID) {
+					const assignRequest = new Request('http://localhost/api/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: deviceId, layoutName, last_seen: new Date().toISOString() }) });
+					ctx.waitUntil(stub.fetch(assignRequest));
 				}
-			});
-		}
-
-		// 處理媒體文件的直接訪問 - 從R2提供文件
-		if (url.pathname.startsWith('/media/')) {
-			try {
-				const filename = decodeURIComponent(url.pathname.replace('/media/', ''));
-				const object = await env.MEDIA_BUCKET.get(filename);
-				
-				if (!object) {
-					return new Response('File not found', { status: 404 });
-				}
-				
-				const headers = new Headers();
-				headers.set('Content-Type', object.httpMetadata?.contentType || 'application/octet-stream');
-				headers.set('Cache-Control', 'public, max-age=31536000'); // 1年緩存
-				headers.set('Access-Control-Allow-Origin', '*');
-				
-				return new Response(object.body, { headers });
-			} catch (error: any) {
-				console.error('Error serving media file:', error);
-				return new Response('Internal Server Error', { status: 500 });
 			}
+
+			const [materials, assignments, groups, settings] = await Promise.all([
+				stub.fetch(`http://localhost/api/materials?layout=${layoutName}`).then(res => res.json()),
+				stub.fetch(`http://localhost/api/assignments?layout=${layoutName}`).then(res => res.json()),
+				stub.fetch(`http://localhost/api/groups?layout=${layoutName}`).then(res => res.json()),
+				stub.fetch(`http://localhost/api/settings?layout=${layoutName}`).then(res => res.json()),
+			]);
+			
+			console.log(`[/api/config] deviceId=${deviceId}, layoutName=${layoutName}, materials count=${materials.length}`);
+			
+			const response = { layout: layoutName, materials, assignments, groups, settings, available_sections: { header_video: '頁首影片區', carousel_top_left: '左上輪播區', carousel_top_right: '右上輪播區', carousel_bottom_left: '左下輪播區', carousel_bottom_right: '右下輪播區', footer_content: '頁尾內容區' } };
+			return new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
 		}
 
-		// 處理完整媒體數據API
-		if (url.pathname === '/api/media_with_settings') {
+		// Handle media upload
+		if (url.pathname === '/api/media' && request.method === 'POST') {
 			try {
-				const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
-				const stub = env.MESSAGE_BROADCASTER.get(id);
-				
-				// 獲取所有數據
-				const materialsResponse = await stub.fetch(new Request('http://localhost/api/materials'));
-				const assignmentsResponse = await stub.fetch(new Request('http://localhost/api/assignments'));
-				const groupsResponse = await stub.fetch(new Request('http://localhost/api/groups'));
-				const settingsResponse = await stub.fetch(new Request('http://localhost/api/settings'));
-				
-				const materials = await materialsResponse.json();
-				const assignments = await assignmentsResponse.json();
-				const groups = await groupsResponse.json();
-				const settings = await settingsResponse.json();
-				
-				const response = {
-					materials,
-					assignments,
-					groups,
-					settings,
-					available_sections: {
-						header_video: '頁首影片區',
-						carousel_top_left: '左上輪播區',
-						carousel_top_right: '右上輪播區',
-						carousel_bottom_left: '左下輪播區',
-						carousel_bottom_right: '右下輪播區',
-						footer_content: '頁尾內容區'
-					}
-				};
-				
-				return new Response(JSON.stringify(response), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} catch (error: any) {
-				console.error('Error fetching media with settings:', error);
-				return new Response(JSON.stringify({ error: 'Failed to fetch data' }), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			}
-		}
+				const formData = await request.formData();
+				const file = formData.get('file') as File;
+				const layoutName = formData.get('layout') as string || 'default';
+				const sectionKey = formData.get('section_key') as string;
 
-		// 處理媒體檔案相關的 API 請求
-		if (url.pathname === '/api/media') {
-			if (request.method === 'POST') {
-				// 上傳檔案到 R2
-				console.log('🚀 POST /api/media route called - starting file upload process');
-				
-				try {
-					console.log('📝 Attempting to read FormData from request...');
-					const formData = await request.formData();
-					console.log('✅ Successfully read FormData from request');
-					
-					console.log('📁 Attempting to get file from FormData...');
-					const file = formData.get('file') as File;
-					
-					if (!file) {
-						console.log('❌ No file found in FormData');
-						return new Response(JSON.stringify({ error: 'No file provided' }), {
-							status: 400,
-							headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-						});
-					}
+				console.log(`[/api/media] Upload request - layout=${layoutName}, file=${file?.name}, fileSize=${file?.size}, section_key=${sectionKey}`);
 
-					console.log(`✅ Successfully got file from FormData - Name: "${file.name}", Size: ${file.size} bytes`);
-
-					// 生成檔案名稱（使用時間戳避免重複）
-					const timestamp = Date.now();
-					const fileExtension = file.name.split('.').pop();
-					const key = `${timestamp}-${file.name}`;
-					console.log(`🔑 Generated file key: "${key}"`);
-
-					// 將檔案轉換為 ArrayBuffer 並上傳到 R2
-					console.log('🔄 Converting file to ArrayBuffer...');
-					const arrayBuffer = await file.arrayBuffer();
-					console.log(`✅ File converted to ArrayBuffer, size: ${arrayBuffer.byteLength} bytes`);
-					
-					console.log('☁️ Calling env.MEDIA_BUCKET.put() to upload to R2...');
-					await env.MEDIA_BUCKET.put(key, arrayBuffer, {
-						httpMetadata: {
-							contentType: file.type,
-						},
+				if (!file || !file.name) {
+					console.error('[/api/media] No file provided in request');
+					return new Response(JSON.stringify({ 
+						error: '未選擇檔案',
+						message: '請確保已選擇要上傳的圖片或影片檔案'
+					}), { 
+						status: 400, 
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
 					});
-					console.log('✅ Successfully uploaded file to R2');
+				}
+				
+				if (file.size === 0) {
+					console.error('[/api/media] File size is 0');
+					return new Response(JSON.stringify({ 
+						error: '檔案無效',
+						message: '上傳的檔案大小為 0，請選擇有效的檔案'
+					}), { 
+						status: 400, 
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+					});
+				}
 
-					// 保存媒體信息到Durable Object
-					const material: MediaMaterial = {
+				// Generate unique filename
+				const timestamp = Date.now();
+				const originalFilename = file.name;
+				const ext = originalFilename.split('.').pop();
+				const uniqueFilename = `${timestamp}-${Math.random().toString(36).substr(2, 9)}.${ext}`;
+
+				// Upload to R2
+				await env.MEDIA_BUCKET.put(uniqueFilename, file.stream(), {
+					httpMetadata: {
+						contentType: file.type,
+					},
+				});
+
+				// Create material record
+				const material: MediaMaterial = {
+					id: generateId(),
+					filename: uniqueFilename,
+					original_filename: originalFilename,
+					type: getFileType(originalFilename),
+					url: `/media/${uniqueFilename}`,
+					size: file.size,
+					uploaded_at: new Date().toISOString(),
+				};
+
+				// Save to Durable Object
+				const saveRequest = new Request(`http://localhost/api/materials?layout=${layoutName}`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(material),
+				});
+				const saveResponse = await stub.fetch(saveRequest);
+				console.log(`[/api/media] Material saved to layout=${layoutName}, material.id=${material.id}, response.ok=${saveResponse.ok}`);
+
+				// If section_key is provided, auto-assign
+				if (sectionKey) {
+					const assignment: Assignment = {
 						id: generateId(),
-						filename: key,
-						type: getFileType(file.name),
-						url: `/media/${key}`,
-						uploaded_at: new Date().toISOString()
+						section_key: sectionKey,
+						content_type: 'single_media',
+						content_id: material.id,
+						created_at: new Date().toISOString(),
 					};
-					
-					const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
-					const stub = env.MESSAGE_BROADCASTER.get(id);
-					await stub.fetch(new Request('http://localhost/api/materials', {
+					const assignRequest = new Request(`http://localhost/api/assignments?layout=${layoutName}`, {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify(material)
-					}));
-
-					// 注意：這裡不發送全域播放列表更新通知
-					// 因為某些上傳（如群組圖片上傳）不需要立即推播到前端
-					// 具體的通知會在相關的操作完成後發送
-
-					const response = {
-						success: true, 
-						key: key,
-						originalName: file.name,
-						size: file.size,
-						type: file.type,
-						material: material
-					};
-					console.log('📤 Sending success response:', response);
-
-					return new Response(JSON.stringify(response), {
-						status: 200,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+						body: JSON.stringify(assignment),
 					});
-				} catch (error: any) {
-					console.log('❌ Error caught in POST /api/media:', error);
-					console.log('❌ Error message:', error?.message);
-					console.log('❌ Error stack:', error?.stack);
-					
-					return new Response(JSON.stringify({ error: 'Upload failed', details: error?.message || 'Unknown error' }), {
-						status: 500,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
+					await stub.fetch(assignRequest);
 				}
-			} else if (request.method === 'GET') {
-				// 獲取檔案列表 - 從Durable Object獲取
-				try {
-					const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
-					const stub = env.MESSAGE_BROADCASTER.get(id);
-					const response = await stub.fetch(new Request('http://localhost/api/materials'));
-					const materials = await response.json();
-					
-					return new Response(JSON.stringify(materials), {
-						status: 200,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				} catch (error: any) {
-					return new Response(JSON.stringify({ error: 'Failed to fetch file list', details: error?.message || 'Unknown error' }), {
-						status: 500,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
-			}
-		}
-
-		// 處理刪除特定檔案的請求 DELETE /api/media/[filename]
-		if (url.pathname.startsWith('/api/media/') && request.method === 'DELETE') {
-			try {
-				// 從 URL 中提取檔案名稱
-				const filename = decodeURIComponent(url.pathname.replace('/api/media/', ''));
-				
-				if (!filename) {
-					return new Response(JSON.stringify({ error: 'No filename provided' }), {
-						status: 400,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
-
-				// 從 R2 中刪除檔案
-				await env.MEDIA_BUCKET.delete(filename);
-
-				// 從Durable Object中刪除媒體記錄
-				const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
-				const stub = env.MESSAGE_BROADCASTER.get(id);
-				await stub.fetch(new Request(`http://localhost/api/materials/${filename}`, {
-					method: 'DELETE'
-				}));
-
-					// 注意：這裡不發送全域播放列表更新通知
-					// 刪除操作的通知會在具體的刪除操作完成後發送
 
 				return new Response(JSON.stringify({ 
 					success: true, 
-					message: `File "${filename}" deleted successfully` 
-				}), {
+					material,
+					message: '上傳成功'
+				}), { 
 					status: 200,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
 				});
-			} catch (error: any) {
-				return new Response(JSON.stringify({ error: 'Delete failed', details: error?.message || 'Unknown error' }), {
+			} catch (error) {
+				console.error('Media upload error:', error);
+				return new Response(JSON.stringify({ 
+					error: '上傳失敗', 
+					message: error instanceof Error ? error.message : '未知錯誤'
+				}), { 
 					status: 500,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
 				});
 			}
 		}
 
-		// 處理群組圖片上傳請求
-		if (url.pathname.match(/\/api\/groups\/[^\/]+\/images$/) && request.method === 'POST') {
+		// Handle group deletion with cascade delete of materials
+		if (url.pathname.match(/^\/api\/groups\/[^/]+$/) && request.method === 'DELETE') {
 			try {
-				const groupId = url.pathname.split('/')[3];
-				const formData = await request.formData();
-				const files = formData.getAll('files') as File[];
+				const groupId = decodeURIComponent(url.pathname.replace('/api/groups/', ''));
+				const layoutName = url.searchParams.get('layout') || 'default';
 				
-				if (!files || files.length === 0) {
-					return new Response(JSON.stringify({ error: 'No files provided' }), {
-						status: 400,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
+				console.log(`[DELETE /api/groups] Deleting group ${groupId} from layout ${layoutName}`);
 				
-				// 取得 Durable Object 引用
-				const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
-				const stub = env.MESSAGE_BROADCASTER.get(id);
+				// Get group info from Durable Object
+				const groupsResponse = await stub.fetch(`http://localhost/api/groups?layout=${layoutName}`);
+				const groups = await groupsResponse.json() as CarouselGroup[];
+				const group = groups.find(g => g.id === groupId);
 				
-				// 檢查群組是否存在
-				const groupsResponse = await stub.fetch(new Request('http://localhost/api/groups'));
-				const groups = await groupsResponse.json();
-				const group = groups.find((g: any) => g.id === groupId);
 				if (!group) {
-					return new Response(JSON.stringify({ error: 'Group not found' }), {
-						status: 404,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					return new Response(JSON.stringify({ error: '群組不存在' }), { 
+						status: 404, 
+						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
 					});
 				}
 				
-				const uploadedMaterials: MediaMaterial[] = [];
+				// Get all materials from Durable Object
+				const materialsResponse = await stub.fetch(`http://localhost/api/materials?layout=${layoutName}`);
+				const allMaterials = await materialsResponse.json() as MediaMaterial[];
 				
-				// 處理每個檔案上傳
-				for (const file of files) {
-					if (!file || file.size === 0) continue;
-					
-					// 生成唯一檔案名
-					const timestamp = Date.now();
-					const randomStr = Math.random().toString(36).substring(2, 8);
-					const extension = file.name.split('.').pop() || 'jpg';
-					const uniqueFilename = `group-${groupId}-${timestamp}-${randomStr}.${extension}`;
-					
-					// 上傳到R2
-					await env.MEDIA_BUCKET.put(uniqueFilename, file.stream(), {
-						httpMetadata: {
-							contentType: file.type || 'image/jpeg'
-						}
-					});
-					
-					// 建立媒體材料記錄
-					const material: MediaMaterial = {
-						id: generateId(),
-						filename: uniqueFilename,
-						original_filename: file.name,
-						url: `/media/${uniqueFilename}`,
-						type: getFileType(file.name),
-						size: file.size,
-						uploaded_at: new Date().toISOString(),
-						group_id: groupId // 標記為群組專屬圖片
-					};
-					
-					// 儲存到材料庫
-					await stub.fetch(new Request('http://localhost/api/materials', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify(material)
-					}));
-					uploadedMaterials.push(material);
-				}
+				// Find materials that belong to this group
+				const groupMaterialIds = group.materials || [];
+				const materialsToDelete = allMaterials.filter(m => groupMaterialIds.includes(m.id));
 				
-				if (uploadedMaterials.length > 0) {
-					// 將上傳的材料添加到群組
-					const addMaterialsFormData = new FormData();
-					addMaterialsFormData.append('action', 'add_materials');
-					uploadedMaterials.forEach(material => {
-						addMaterialsFormData.append('material_ids[]', material.id);
-					});
-					
-					// 呼叫群組材料API
-					await stub.fetch(new Request(`http://localhost/api/groups/${groupId}/materials`, {
-						method: 'POST',
-						body: addMaterialsFormData
-					}));
-				}
+				console.log(`[DELETE /api/groups] Found ${materialsToDelete.length} materials to delete`);
 				
-				return new Response(JSON.stringify({
-					success: true,
-					uploaded_count: uploadedMaterials.length,
-					materials: uploadedMaterials
-				}), {
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			} catch (error: any) {
-				console.error('Error uploading images to group:', error);
-				return new Response(JSON.stringify({
-					error: 'Failed to upload images to group',
-					details: error.message
-				}), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-				});
-			}
-		}
-
-		// 處理群組刪除請求 - 需要同時刪除 R2 中的檔案
-		if (url.pathname.startsWith('/ws/api/groups/') && request.method === 'DELETE') {
-			try {
-				const groupId = url.pathname.replace('/ws/api/groups/', '');
-				if (!groupId) {
-					return new Response(JSON.stringify({ error: 'Group ID is required' }), {
-						status: 400,
-						headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-					});
-				}
-				
-				// 先從 Durable Object 獲取群組信息
-				const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
-				const stub = env.MESSAGE_BROADCASTER.get(id);
-				
-				const groupsResponse = await stub.fetch(new Request('http://localhost/api/groups'));
-				const groups = await groupsResponse.json();
-				const targetGroup = groups.find((g: any) => g.id === groupId);
-				
-				if (targetGroup && targetGroup.materials) {
-					// 從 R2 中刪除群組內的所有檔案
-					for (const material of targetGroup.materials) {
-						try {
-							await env.MEDIA_BUCKET.delete(material.filename);
-							console.log(`已從 R2 刪除檔案: ${material.filename}`);
-						} catch (error) {
-							console.warn(`刪除 R2 檔案失敗: ${material.filename}`, error);
-						}
+				// Delete files from R2
+				for (const material of materialsToDelete) {
+					try {
+						await env.MEDIA_BUCKET.delete(material.filename);
+						console.log(`[DELETE /api/groups] Deleted R2 file: ${material.filename}`);
+					} catch (error) {
+						console.error(`[DELETE /api/groups] Failed to delete R2 file ${material.filename}:`, error);
 					}
 				}
 				
-				// 轉發刪除請求給 Durable Object
-				const newUrl = new URL(request.url);
-				newUrl.pathname = url.pathname.replace('/ws', '');
-				const newRequest = new Request(newUrl.toString(), {
-					method: request.method,
-					headers: request.headers,
-					body: request.body
-				});
+				// Delete materials from Durable Object
+				for (const material of materialsToDelete) {
+					await stub.fetch(`http://localhost/api/materials/${material.id}?layout=${layoutName}`, { method: 'DELETE' });
+				}
 				
-				return stub.fetch(newRequest);
+				// Delete assignments that reference this group
+				const assignmentsResponse = await stub.fetch(`http://localhost/api/assignments?layout=${layoutName}`);
+				const assignments = await assignmentsResponse.json() as Assignment[];
+				const groupAssignments = assignments.filter(a => a.content_type === 'group_reference' && a.content_id === groupId);
 				
-			} catch (error: any) {
-				console.error('Error deleting group with files:', error);
+				for (const assignment of groupAssignments) {
+					await stub.fetch(`http://localhost/api/assignments/${assignment.id}?layout=${layoutName}`, { method: 'DELETE' });
+					console.log(`[DELETE /api/groups] Deleted assignment ${assignment.id} for section ${assignment.section_key}`);
+				}
+				
+				// Finally, delete the group itself
+				await stub.fetch(`http://localhost/api/groups/${groupId}?layout=${layoutName}`, { method: 'DELETE' });
+				
+				console.log(`[DELETE /api/groups] Successfully deleted group ${groupId} and ${materialsToDelete.length} materials`);
+				
 				return new Response(JSON.stringify({ 
-					error: 'Failed to delete group with files', 
-					details: error.message 
-				}), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+					success: true, 
+					message: `已刪除群組及其包含的 ${materialsToDelete.length} 個媒體檔案` 
+				}), { 
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
+				});
+			} catch (error) {
+				console.error('[DELETE /api/groups] Error:', error);
+				return new Response(JSON.stringify({ 
+					error: '刪除群組失敗', 
+					message: error instanceof Error ? error.message : '未知錯誤' 
+				}), { 
+					status: 500, 
+					headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } 
 				});
 			}
 		}
 
-		// 將 WebSocket 和其他 API 請求轉發給 Durable Object
-		if (url.pathname === '/ws' || 
-			url.pathname.startsWith('/ws/api/') ||
-			(url.pathname.startsWith('/api/') && 
-			 !url.pathname.startsWith('/api/media') && 
-			 url.pathname !== '/api/media_with_settings')) {
-			const id = env.MESSAGE_BROADCASTER.idFromName('global-broadcaster');
-			const stub = env.MESSAGE_BROADCASTER.get(id);
+		// Handle media serving from R2
+		if (url.pathname.startsWith('/media/')) {
+			const filename = url.pathname.replace('/media/', '');
+			const object = await env.MEDIA_BUCKET.get(filename);
 			
-			// 對於 /ws/api/ 路徑，需要重寫 URL 去掉 /ws 前綴
-			if (url.pathname.startsWith('/ws/api/')) {
-				const newUrl = new URL(request.url);
-				newUrl.pathname = url.pathname.replace('/ws', '');
-				const newRequest = new Request(newUrl.toString(), {
-					method: request.method,
-					headers: request.headers,
-					body: request.body
-				});
-				return stub.fetch(newRequest);
+			if (!object) {
+				return new Response('File not found', { status: 404 });
 			}
-			
+
+			return new Response(object.body, {
+				headers: {
+					'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+					'Cache-Control': 'public, max-age=31536000',
+					'Access-Control-Allow-Origin': '*',
+				},
+			});
+		}
+
+		if (url.pathname.startsWith('/api/') || url.pathname === '/ws') {
 			return stub.fetch(request);
 		}
 
-		// 其他所有請求都交給靜態資源服務處理
-		try {
-			return await env.ASSETS.fetch(request);
-		} catch (e) {
-			let notFoundResponse = new Response('Not found', { status: 404 });
-			try {
-				const notFoundAsset = await env.ASSETS.fetch(new Request(new URL('/404.html', request.url), request));
-				notFoundResponse = new Response(notFoundAsset.body, {
-					status: 404,
-					headers: notFoundAsset.headers,
-				});
-			} catch (err) {}
-			return notFoundResponse;
+		// Handle static file serving with ASSETS binding
+		if (env.ASSETS) {
+			return env.ASSETS.fetch(request);
 		}
+
+		// Fallback if ASSETS binding is not available
+		return new Response('Static assets not configured properly', { status: 500 });
 	},
 };

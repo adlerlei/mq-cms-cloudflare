@@ -39,7 +39,13 @@
     </style>
 </head>
 <body>
-    <div class="h-full w-screen flex flex-col bg-black">
+    <div class="h-full w-screen flex flex-col bg-black relative">
+        <!-- Debug info overlay (hidden by default, can be shown with Ctrl+D) -->
+        <div id="debug-overlay" style="display: none; position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: white; padding: 10px; border-radius: 5px; font-size: 12px; z-index: 9999; font-family: monospace;">
+            <div><strong>Device ID:</strong> <span id="debug-device-id">-</span></div>
+            <div><strong>Layout:</strong> <span id="debug-layout">-</span></div>
+            <div><strong>Status:</strong> <span id="debug-status">Loading...</span></div>
+        </div>
 
         <div id="header-container" class="h-[32.3vh] relative flex-shrink-0">
             </div>
