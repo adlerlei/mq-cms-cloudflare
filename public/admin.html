@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="css/bulma.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="css/admin-flow-layout.css">
 </head>
 <body>
     <!-- 認證檢查載入畫面 -->
@@ -45,11 +46,10 @@
         </nav>
     <section class="section">
         <div class="container">
-            <!-- Layout and Device Management -->
-            <div class="columns">
+            <!-- 所有管理區塊 - 流式布局 -->
+            <div class="admin-flow-container">
                 <!-- Layout Management -->
-                <div class="column is-half">
-                    <div class="box">
+                <div class="box">
                         <h2 class="title is-4">版面管理 (Layouts)</h2>
                         <div class="field has-addons">
                             <div class="control is-expanded">
@@ -77,11 +77,10 @@
                                 <button type="submit" class="button is-success">建立新版面</button>
                             </div>
                         </form>
-                    </div>
                 </div>
+                
                 <!-- Device Management -->
-                <div class="column is-half">
-                    <div class="box">
+                <div class="box">
                         <h2 class="title is-4">設備列表與指派</h2>
                         <div id="deviceListContainer" class="table-container">
                             <table class="table is-fullwidth is-striped">
@@ -99,13 +98,9 @@
                             </table>
                         </div>
                     </div>
-                </div>
-            </div>
-            <hr>
-            <div class="columns is-multiline">
+                
                 <!-- 新增媒體 / 指派內容 -->
-                <div class="column is-half">
-                    <div class="box">
+                <div class="box">
                         <h2 class="title is-4">新增媒體 / 指派內容</h2>
                         <form id="uploadForm" action="" method="POST" enctype="multipart/form-data">
                             <div class="field"><label class="label">操作類型</label><div class="control"><div class="select is-fullwidth"><select name="type" id="mediaTypeSelect" required><option value="image">上傳圖片並指派</option><option value="video">上傳影片並指派</option><option value="group_reference">指派輪播組</option></select></div></div></div>
@@ -142,12 +137,10 @@
                             </div>
                             <div class="field is-grouped is-grouped-right"><button type="submit" class="button is-primary">執行操作</button></div>
                         </form>
-                    </div>
                 </div>
 
                 <!-- 全局播放設定 -->
-                <div class="column is-half">
-                    <div class="box">
+                <div class="box">
                         <h2 class="title is-4">全局播放設定</h2>
                         <div id="settings-notification" class="notification is-hidden"></div>
                         <form id="globalSettingsForm">
@@ -168,14 +161,31 @@
                             </div>
                             <div class="field is-grouped is-grouped-right"><button type="submit" class="button is-info" id="saveSettingsButton">儲存設定</button></div>
                         </form>
-                    </div>
                 </div>
 
                 <!-- 媒體庫與區塊內容指派 -->
-                <div class="column is-half">
-                    <div class="box">
-                        <h2 class="title is-4">媒體庫與區塊內容指派</h2>
-                        <div class="table-container">
+                <div class="box">
+                        <div class="level">
+                            <div class="level-left">
+                                <div class="level-item">
+                                    <h2 class="title is-4">媒體庫與區塊內容指派</h2>
+                                </div>
+                            </div>
+                            <div class="level-right">
+                                <div class="level-item">
+                                    <div class="buttons has-addons">
+                                        <button class="button is-small" id="viewTableBtn" title="表格視圖">
+                                            <span class="icon"><i class="fas fa-list"></i></span>
+                                        </button>
+                                        <button class="button is-small is-active" id="viewGridBtn" title="卡片視圖">
+                                            <span class="icon"><i class="fas fa-th"></i></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 表格視圖 -->
+                        <div class="table-container" id="mediaTableView">
                             <table class="table is-fullwidth is-striped is-hoverable media-list-table">
                                 <thead><tr><th>預覽/資訊</th><th>類型</th><th>狀態/指派到區塊</th><th class="has-text-right">操作</th></tr></thead>
                                 <tbody id="mediaTableBody">
@@ -183,12 +193,14 @@
                                 </tbody>
                             </table>
                         </div>
-                    </div>
+                        <!-- 網格視圖（流式布局） -->
+                        <div class="media-library-grid" id="mediaGridView" style="display: none;">
+                            <!-- 由 JavaScript 動態生成 -->
+                        </div>
                 </div>
 
                 <!-- 管理輪播圖片組 -->
-                <div class="column is-half">
-                    <div class="box">
+                <div class="box">
                         <h2 class="title is-4">管理輪播圖片組</h2>
                         <div class="box"><h3 class="title is-5">建立新群組</h3>
                             <form id="createGroupForm" action="" method="POST">
@@ -204,12 +216,10 @@
                                 </tbody>
                             </table></div>
                         </div>
-                    </div>
                 </div>
 
                 <!-- 廣播訊息 -->
-                <div class="column is-half">
-                    <div class="box">
+                <div class="box">
                         <h2 class="title is-4">廣播訊息</h2>
                         <form id="broadcastForm">
                             <div class="field">
@@ -238,9 +248,9 @@
                                 </div>
                             </div>
                         </form>
-                    </div>
                 </div>
-            </div>
+            
+            </div><!-- 結束 admin-flow-container -->
         </div>
     </section>
 

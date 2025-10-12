@@ -18,6 +18,7 @@ let appState = {
         'carousel_bottom_right': '右下輪播區',
         'footer_content': '頁尾內容區'
     },
+    viewMode: 'grid', // 'table' or 'grid'
 };
 
 const stateSubscribers = [];
@@ -258,15 +259,24 @@ function renderCarouselGroups() {
 }
 
 function renderMediaLibrary() {
+    console.log('Rendering media library with materials:', appState.materials);
+    console.log('Assignments:', appState.assignments);
+    console.log('Groups:', appState.groups);
+    console.log('View mode:', appState.viewMode);
+    
+    if (appState.viewMode === 'grid') {
+        renderMediaLibraryGrid();
+    } else {
+        renderMediaLibraryTable();
+    }
+}
+
+function renderMediaLibraryTable() {
     const tbody = document.getElementById('mediaTableBody');
     if (!tbody) {
         console.error('mediaTableBody element not found');
         return;
     }
-
-    console.log('Rendering media library with materials:', appState.materials);
-    console.log('Assignments:', appState.assignments);
-    console.log('Groups:', appState.groups);
     
     const allItems = [];
     
@@ -402,6 +412,135 @@ function renderMediaLibrary() {
     } else {
         tbody.innerHTML = allItems.join('');
         console.log('Rendered', allItems.length, 'items to mediaTableBody');
+    }
+}
+
+function renderMediaLibraryGrid() {
+    const gridContainer = document.getElementById('mediaGridView');
+    if (!gridContainer) {
+        console.error('mediaGridView element not found');
+        return;
+    }
+    
+    const allCards = [];
+    
+    // Collect all material IDs that are in groups (to filter them out)
+    const materialsInGroups = new Set();
+    if (appState.groups && appState.groups.length > 0) {
+        appState.groups.forEach(group => {
+            if (group.materials && Array.isArray(group.materials)) {
+                group.materials.forEach(matId => materialsInGroups.add(matId));
+            }
+        });
+    }
+    
+    // Add individual media files (exclude those in groups)
+    if (appState.materials && appState.materials.length > 0) {
+        appState.materials.forEach(material => {
+            // Skip materials that are in groups
+            if (materialsInGroups.has(material.id)) return;
+            
+            const assignment = appState.assignments.find(a => a.content_id === material.id && a.content_type === 'single_media');
+            const assignedSection = assignment ? appState.available_sections[assignment.section_key] : null;
+            
+            const preview = material.type === 'image' 
+                ? `<img src="${material.url}" alt="${material.filename}">`
+                : `<video src="${material.url}" muted></video>`;
+            
+            const typeClass = material.type === 'image' ? 'is-image' : 'is-video';
+            const typeIcon = material.type === 'image' ? 'fa-image' : 'fa-video';
+            const typeLabel = material.type === 'image' ? '圖片' : '影片';
+            
+            const statusBadge = assignedSection 
+                ? `<span class="tag is-success is-small">${assignedSection}</span>`
+                : '<span class="tag is-light is-small">未指派</span>';
+            
+            allCards.push(`
+                <div class="media-card">
+                    <div class="media-card-preview">
+                        ${preview}
+                        <div class="media-card-type-badge ${typeClass}">
+                            <i class="fas ${typeIcon}"></i> ${typeLabel}
+                        </div>
+                    </div>
+                    <div class="media-card-content">
+                        <div class="media-card-title" title="${material.filename}">${material.filename}</div>
+                        <div class="media-card-meta">${formatFileSize(material.size)}</div>
+                        <div class="media-card-status">
+                            ${statusBadge}
+                        </div>
+                        <div class="media-card-actions">
+                            ${!assignedSection ? `
+                                <button class="button is-primary is-small reassign-media-button" 
+                                        data-media-id="${material.id}" data-filename="${material.filename}">
+                                    <i class="fas fa-arrow-right"></i>
+                                </button>
+                            ` : `
+                                <button class="button is-info is-small reassign-media-button" 
+                                        data-media-id="${material.id}" data-filename="${material.filename}">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                            `}
+                            <button class="button is-danger is-small delete-media-button" 
+                                    data-media-id="${material.id}" data-filename="${material.filename}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `);
+        });
+    }
+    
+    // Add assigned groups
+    if (appState.assignments && appState.assignments.length > 0) {
+        const groupAssignments = appState.assignments.filter(a => a.content_type === 'group_reference');
+        
+        groupAssignments.forEach(assignment => {
+            const group = appState.groups.find(g => g.id === assignment.content_id);
+            if (!group) return;
+            
+            const assignedSection = appState.available_sections[assignment.section_key];
+            const offset = assignment.offset || 0;
+            
+            allCards.push(`
+                <div class="media-card is-group">
+                    <div class="media-card-preview">
+                        <div class="media-card-type-badge is-group">
+                            <i class="fas fa-images"></i> 輪播組
+                        </div>
+                    </div>
+                    <div class="media-card-content">
+                        <div class="media-card-title" title="${group.name}">🎭 ${group.name}</div>
+                        <div class="media-card-meta">${group.materials.length} 張圖片</div>
+                        ${offset > 0 ? `<div class="media-card-meta has-text-info">偏移: 第 ${offset + 1} 張開始</div>` : ''}
+                        <div class="media-card-status">
+                            <span class="tag is-success is-small">${assignedSection}</span>
+                        </div>
+                        <div class="media-card-actions">
+                            <button class="button is-danger is-small delete-assignment-button" 
+                                    data-assignment-id="${assignment.id}" data-content-name="${group.name}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `);
+        });
+    }
+    
+    if (allCards.length === 0) {
+        gridContainer.innerHTML = `
+            <div class="media-library-empty">
+                <div class="icon">
+                    <i class="fas fa-folder-open"></i>
+                </div>
+                <p>目前沒有任何媒體檔案或群組指派</p>
+            </div>
+        `;
+    } else {
+        gridContainer.innerHTML = allCards.join('');
+        console.log('Rendered', allCards.length, 'cards to mediaGridView');
     }
 }
 
@@ -1154,6 +1293,31 @@ document.addEventListener('DOMContentLoaded', () => {
             copyDeviceIdFromList(button.dataset.deviceId);
         }
     });
+
+    // View toggle buttons
+    document.getElementById('viewTableBtn').addEventListener('click', () => {
+        appState.viewMode = 'table';
+        document.getElementById('viewTableBtn').classList.add('is-active');
+        document.getElementById('viewGridBtn').classList.remove('is-active');
+        document.getElementById('mediaTableView').style.display = 'block';
+        document.getElementById('mediaGridView').style.display = 'none';
+        renderMediaLibrary();
+    });
+    
+    document.getElementById('viewGridBtn').addEventListener('click', () => {
+        appState.viewMode = 'grid';
+        document.getElementById('viewGridBtn').classList.add('is-active');
+        document.getElementById('viewTableBtn').classList.remove('is-active');
+        document.getElementById('mediaTableView').style.display = 'none';
+        document.getElementById('mediaGridView').style.display = 'grid';
+        renderMediaLibrary();
+    });
+    
+    // Set initial view
+    if (appState.viewMode === 'grid') {
+        document.getElementById('mediaGridView').style.display = 'grid';
+        document.getElementById('mediaTableView').style.display = 'none';
+    }
 
     // Event listeners for media upload
     document.getElementById('uploadForm').addEventListener('submit', handleMediaUpload);
