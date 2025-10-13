@@ -1,5 +1,30 @@
 // MQ-CMS Admin Panel - Cloudflare Worker Version - Complete Implementation
 
+// --- LAYOUT TEMPLATES CONFIGURATION ---
+const LAYOUT_TEMPLATES = {
+    "default": {
+        name: "預設佈局（六區塊）",
+        sections: {
+            "header_video": "頁首影片區",
+            "top_left": "左上輪播區",
+            "top_right": "右上輪播區",
+            "bottom_left": "左下輪播區",
+            "bottom_right": "右下輪播區",
+            "footer_content": "頁尾內容區"
+        }
+    },
+    "dual_video": {
+        name: "雙影片佈局",
+        sections: {
+            "header_video": "頁首影片區",
+            "header_1_video": "第二頁首影片區",
+            "bottom_left": "左下輪播區",
+            "bottom_right": "右下輪播區",
+            "footer_content": "頁尾內容區"
+        }
+    }
+};
+
 // --- STATE MANAGEMENT ---
 let appState = {
     layouts: [],
@@ -12,10 +37,10 @@ let appState = {
     settings: {},
     available_sections: {
         'header_video': '頁首影片區',
-        'carousel_top_left': '左上輪播區',
-        'carousel_top_right': '右上輪播區',
-        'carousel_bottom_left': '左下輪播區',
-        'carousel_bottom_right': '右下輪播區',
+        'top_left': '左上輪播區',
+        'top_right': '右上輪播區',
+        'bottom_left': '左下輪播區',
+        'bottom_right': '右下輪播區',
         'footer_content': '頁尾內容區'
     },
     viewMode: 'grid', // 'table' or 'grid'
@@ -23,14 +48,29 @@ let appState = {
 
 const stateSubscribers = [];
 
+// 根据当前 layout 的 template 更新 available_sections
+function updateAvailableSections() {
+    const currentLayout = appState.layouts.find(l => l.name === appState.activeLayout);
+    const template = currentLayout?.template || 'default';
+    const templateConfig = LAYOUT_TEMPLATES[template] || LAYOUT_TEMPLATES['default'];
+    
+    appState.available_sections = { ...templateConfig.sections };
+    console.log(`[updateAvailableSections] Layout: ${appState.activeLayout}, Template: ${template}, Sections:`, appState.available_sections);
+}
+
 function setState(newState) {
     const oldLayout = appState.activeLayout;
     appState = { ...appState, ...newState };
 
     if (newState.activeLayout && newState.activeLayout !== oldLayout) {
         console.log(`Layout changed from ${oldLayout} to ${appState.activeLayout}. Re-rendering UI and fetching data...`);
+        updateAvailableSections(); // 更新可用区块
         stateSubscribers.forEach(callback => callback(appState));
         fetchLayoutData(appState.activeLayout);
+    } else if (newState.layouts) {
+        // layouts 数据更新时也需要更新 available_sections
+        updateAvailableSections();
+        stateSubscribers.forEach(callback => callback(appState));
     } else {
         stateSubscribers.forEach(callback => callback(appState));
     }
@@ -96,6 +136,10 @@ async function fetchLayoutData(layoutName) {
 
         appState = { ...appState, ...data, materials };
         console.log('Updated appState.materials:', appState.materials);
+        
+        // 更新可用区块（因为这里直接修改 appState，不经过 setState）
+        updateAvailableSections();
+        
         render();
     } catch (error) {
         console.error(`Failed to fetch data for layout '${layoutName}':`, error);
@@ -593,11 +637,19 @@ function showNotification(message, type = 'info') {
 async function handleCreateLayout(e) {
     e.preventDefault();
     const input = document.getElementById('newLayoutName');
+    const templateSelect = document.getElementById('layoutTemplateSelect');
     const name = input.value.trim();
+    const template = templateSelect.value;
+    
     if (!name) return alert('Layout name is required.');
+    if (!template) return alert('Template is required.');
 
     try {
-        const newLayout = { name, created_at: new Date().toISOString() };
+        const newLayout = { 
+            name, 
+            template,
+            created_at: new Date().toISOString() 
+        };
         const response = await fetchWithAuth('/api/layouts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -606,7 +658,8 @@ async function handleCreateLayout(e) {
         if (!response.ok) throw new Error('Failed to create layout.');
         
         input.value = '';
-        showNotification(`版面 "${name}" 建立成功。`, 'success');
+        templateSelect.value = 'default';
+        showNotification(`版面 "${name}" (${template === 'default' ? '預設佈局' : '雙影片佈局'}) 建立成功。`, 'success');
         
         const newLayouts = [...appState.layouts, newLayout];
         setState({ layouts: newLayouts });
@@ -1269,7 +1322,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('deleteLayoutButton').addEventListener('click', handleDeleteLayout);
     document.getElementById('previewLayoutButton').addEventListener('click', () => {
         const layoutName = appState.activeLayout;
-        const previewUrl = `/display.html?deviceId=preview-${layoutName}`;
+        const previewUrl = `/display.html?deviceId=preview-${layoutName}&t=${Date.now()}`;
         window.open(previewUrl, '_blank');
     });
     document.body.addEventListener('change', e => {

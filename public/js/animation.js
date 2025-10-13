@@ -217,12 +217,33 @@ function updateAllSections(data) {
         footer: getInterval(settings.footer_interval, 7),
     };
 
-    updateSection('header_video', data, 'header-container', intervals.header);
-    updateSection('carousel_top_left', data, 'slot-top-left', intervals.carousel);
-    updateSection('carousel_top_right', data, 'slot-top-right', intervals.carousel);
-    updateSection('carousel_bottom_left', data, 'slot-bottom-left', intervals.carousel);
-    updateSection('carousel_bottom_right', data, 'slot-bottom-right', intervals.carousel);
-    updateSection('footer_content', data, 'footer-container', intervals.footer);
+    // 区块与容器的映射关系（支持多种模板）
+    const sectionMappings = [
+        // 预设布局的区块
+        { sectionKey: 'header_video', containerId: 'header-container', interval: intervals.header },
+        { sectionKey: 'top_left', containerId: 'slot-top-left', interval: intervals.carousel },
+        { sectionKey: 'top_right', containerId: 'slot-top-right', interval: intervals.carousel },
+        { sectionKey: 'bottom_left', containerId: 'slot-bottom-left', interval: intervals.carousel },
+        { sectionKey: 'bottom_right', containerId: 'slot-bottom-right', interval: intervals.carousel },
+        { sectionKey: 'footer_content', containerId: 'footer-container', interval: intervals.footer },
+        
+        // 双影片布局的额外区块
+        { sectionKey: 'header_1_video', containerId: 'header-1-container', interval: intervals.header },
+        
+        // 保留旧的 section_key 命名（向后兼容）
+        { sectionKey: 'carousel_top_left', containerId: 'slot-top-left', interval: intervals.carousel },
+        { sectionKey: 'carousel_top_right', containerId: 'slot-top-right', interval: intervals.carousel },
+        { sectionKey: 'carousel_bottom_left', containerId: 'slot-bottom-left', interval: intervals.carousel },
+        { sectionKey: 'carousel_bottom_right', containerId: 'slot-bottom-right', interval: intervals.carousel },
+    ];
+
+    // 只更新页面上实际存在的容器
+    sectionMappings.forEach(mapping => {
+        const container = document.getElementById(mapping.containerId);
+        if (container) {
+            updateSection(mapping.sectionKey, data, mapping.containerId, mapping.interval);
+        }
+    });
 }
 
 // WebSocket initialization

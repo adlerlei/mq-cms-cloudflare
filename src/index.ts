@@ -48,6 +48,7 @@ interface Device {
 
 interface Layout {
 	name: string;
+	template: string; // 模板类型：default, dual_video 等
 	created_at: string;
 }
 
@@ -249,7 +250,7 @@ export class MessageBroadcaster {
 	async deleteGroup(layoutName: string, groupId: string): Promise<void> { const groups = await this.getGroups(layoutName); const filtered = groups.filter(g => g.id !== groupId); await this.state.storage.put(layoutKey(layoutName, 'groups'), filtered); }
 	async getSettings(layoutName: string): Promise<Settings> { const key = layoutKey(layoutName, 'settings'); return (await this.state.storage.get<Settings>(key)) || { header_interval: 5, carousel_interval: 6, footer_interval: 7 }; }
 	async saveSettings(layoutName: string, settings: Settings): Promise<void> { await this.state.storage.put(layoutKey(layoutName, 'settings'), settings); }
-	async getLayouts(): Promise<Layout[]> { const layouts = await this.state.storage.get<Layout[]>('layouts') || []; if (!layouts.some(l => l.name === 'default')) { layouts.unshift({ name: 'default', created_at: new Date().toISOString() }); await this.state.storage.put('layouts', layouts); } return layouts; }
+	async getLayouts(): Promise<Layout[]> { const layouts = await this.state.storage.get<Layout[]>('layouts') || []; if (!layouts.some(l => l.name === 'default')) { layouts.unshift({ name: 'default', template: 'default', created_at: new Date().toISOString() }); await this.state.storage.put('layouts', layouts); } return layouts; }
 	async saveLayout(layout: Layout): Promise<void> { const layouts = await this.getLayouts(); if (!layouts.some(l => l.name === layout.name)) { layouts.push(layout); await this.state.storage.put('layouts', layouts); } }
 	async deleteLayout(layoutName: string): Promise<void> { let layouts = await this.getLayouts(); layouts = layouts.filter(l => l.name !== layoutName); await this.state.storage.put('layouts', layouts); }
 	async getDevices(): Promise<Device[]> { return (await this.state.storage.get<Device[]>('devices')) || []; }
@@ -513,6 +514,58 @@ export default {
 
 		if (url.pathname.startsWith('/api/') || url.pathname === '/ws') {
 			return stub.fetch(request);
+		}
+
+		// Handle display.html with template routing (支持 /display.html 和 /display)
+		if ((url.pathname === '/display.html' || url.pathname === '/display') && env.ASSETS) {
+			const deviceId = url.searchParams.get('deviceId');
+			let templateHtml = 'default.html'; // 默认模板
+			let layoutName: string | null = null;
+			
+			if (deviceId) {
+				try {
+					// 处理 preview 设备：从 deviceId 中提取 layoutName
+					if (deviceId.startsWith('preview-')) {
+						layoutName = deviceId.replace('preview-', '');
+						console.log(`[Template Routing] Preview device, layoutName: ${layoutName}`);
+					} else {
+						// 真实设备：从设备信息中获取 layoutName
+						const devicesResponse = await stub.fetch('http://localhost/api/devices');
+						const devices = await devicesResponse.json() as Device[];
+						const device = devices.find(d => d.id === deviceId);
+						layoutName = device?.layoutName || null;
+						console.log(`[Template Routing] Real device, layoutName: ${layoutName}`);
+					}
+					
+					// 根据 layoutName 查找模板
+					if (layoutName) {
+						const layoutsResponse = await stub.fetch('http://localhost/api/layouts');
+						const layouts = await layoutsResponse.json() as Layout[];
+						const layout = layouts.find(l => l.name === layoutName);
+						
+						if (layout && layout.template) {
+							const templateMap: Record<string, string> = {
+								'default': 'default.html',
+								'dual_video': 'dual_video.html'
+							};
+							templateHtml = templateMap[layout.template] || 'default.html';
+							console.log(`[Template Routing] Layout: ${layoutName}, Template: ${layout.template}, HTML: ${templateHtml}`);
+						}
+					}
+				} catch (error) {
+					console.error('[Template Routing] Error:', error);
+					// 发生错误时使用默认模板
+				}
+			}
+			
+			// 返回对应的模板 HTML（保留原始查询参数）
+			const templateUrl = new URL(`/${templateHtml}`, request.url);
+			templateUrl.search = url.search; // 保持原始的查询参数（如 ?deviceId=...）
+			const templateRequest = new Request(templateUrl.toString(), {
+				method: request.method,
+				headers: request.headers,
+			});
+			return env.ASSETS.fetch(templateRequest);
 		}
 
 		// Handle static file serving with ASSETS binding

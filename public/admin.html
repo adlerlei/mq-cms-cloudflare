@@ -69,13 +69,24 @@
                                 <button id="deleteLayoutButton" class="button is-danger" disabled>刪除此版面</button>
                             </div>
                         </div>
-                        <form id="createLayoutForm" class="field has-addons">
-                            <div class="control is-expanded">
-                                <input id="newLayoutName" class="input" type="text" placeholder="輸入新版面名稱 (e.g., driving_school)" required>
+                        <form id="createLayoutForm">
+                            <div class="field has-addons">
+                                <div class="control is-expanded">
+                                    <input id="newLayoutName" class="input" type="text" placeholder="輸入新版面名稱 (e.g., driving_school)" required>
+                                </div>
+                                <div class="control">
+                                    <div class="select">
+                                        <select id="layoutTemplateSelect" required>
+                                            <option value="default">預設佈局（六區塊）</option>
+                                            <option value="dual_video">雙影片佈局</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="control">
+                                    <button type="submit" class="button is-success">建立新版面</button>
+                                </div>
                             </div>
-                            <div class="control">
-                                <button type="submit" class="button is-success">建立新版面</button>
-                            </div>
+                            <p class="help">選擇版面的顯示佈局模板</p>
                         </form>
                 </div>
                 
