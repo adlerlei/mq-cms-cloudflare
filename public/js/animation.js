@@ -232,21 +232,10 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     
     const carouselContainer = document.createElement('div');
     carouselContainer.className = 'carousel-container';
-    carouselContainer.style.cssText = `
-        width: ${containerWidth}px !important;
-        height: ${containerHeight}px !important;
-        position: relative !important;
-        overflow: hidden !important;
-        display: block !important;
-    `;
+    // Let CSS control the sizing - don't override with fixed px values
     
     const carouselInner = document.createElement('div');
     carouselInner.className = 'carousel-inner';
-    carouselInner.style.cssText = `
-        display: flex !important;
-        width: ${containerWidth}px !important;
-        height: ${containerHeight}px !important;
-    `;
     
     carouselContainer.appendChild(carouselInner);
     container.appendChild(carouselContainer);
@@ -255,39 +244,16 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     setTimeout(() => {
         const containerRect = carouselContainer.getBoundingClientRect();
         const innerRect = carouselInner.getBoundingClientRect();
-        const computedStyle = window.getComputedStyle(carouselContainer);
         
         console.log(`📦 carouselContainer: ${containerRect.width}x${containerRect.height}`);
-        console.log(`   🎨 Computed styles:`, {
-            width: computedStyle.width,
-            height: computedStyle.height,
-            position: computedStyle.position,
-            display: computedStyle.display
-        });
-        console.log(`   🔧 Inline styles:`, carouselContainer.style.cssText);
         console.log(`📦 carouselInner: ${innerRect.width}x${innerRect.height}`);
         addDebugInfo(`   └─ 📦 輪播容器: ${Math.round(containerRect.width)}x${Math.round(containerRect.height)}px`);
-        
-        // If dimensions are wrong, force fix
-        if (containerRect.height === 0 && containerHeight > 0) {
-            console.warn(`⚠️ Container height is 0, forcing fix...`);
-            carouselContainer.style.width = containerWidth + 'px';
-            carouselContainer.style.height = containerHeight + 'px';
-            carouselContainer.style.display = 'block';
-            carouselInner.style.width = containerWidth + 'px';
-            carouselInner.style.height = containerHeight + 'px';
-            addDebugInfo(`   └─ ⚠️ 強制修正容器尺寸`);
-        }
     }, 50);
 
     contentItems.forEach((item, idx) => {
         const itemWrapper = document.createElement('div');
         itemWrapper.className = 'carousel-item';
-        itemWrapper.style.cssText = `
-            flex: 0 0 100% !important;
-            height: ${containerHeight}px !important;
-            width: ${containerWidth}px !important;
-        `;
+        // Let CSS control item sizing
         
         let mediaElement;
         if (item.type === 'video') {
@@ -295,24 +261,12 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
             mediaElement.src = item.url;
             mediaElement.muted = true;
             mediaElement.playsInline = true;
-            mediaElement.style.cssText = `
-                width: ${containerWidth}px !important;
-                height: ${containerHeight}px !important;
-                object-fit: contain !important;
-                display: block !important;
-                background-color: black !important;
-            `;
+            // Let CSS control media sizing
         } else {
             mediaElement = document.createElement('img');
             mediaElement.src = item.url;
             mediaElement.alt = item.filename || 'Image';
-            mediaElement.style.cssText = `
-                width: ${containerWidth}px !important;
-                height: ${containerHeight}px !important;
-                object-fit: contain !important;
-                display: block !important;
-                background-color: black !important;
-            `;
+            // Let CSS control media sizing
             
             // Debug: check image after load
             mediaElement.addEventListener('load', () => {
@@ -333,16 +287,6 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
         itemWrapper.appendChild(mediaElement);
         carouselInner.appendChild(itemWrapper);
         console.log(`✅ Created DOM element [${idx}]: ${item.type} - ${item.url}`);
-        
-        // Check wrapper dimensions after DOM insertion
-        setTimeout(() => {
-            const wrapperRect = itemWrapper.getBoundingClientRect();
-            console.log(`📦 Wrapper [${idx}] dimensions:`, {
-                width: wrapperRect.width,
-                height: wrapperRect.height,
-                visible: wrapperRect.width > 0 && wrapperRect.height > 0
-            });
-        }, 100);
     });
     
     addDebugInfo(`   └─ ✅ 已創建 ${contentItems.length} 個 DOM 元素`);
