@@ -1,7 +1,7 @@
 # AI Context - MQ CMS Project
 
-> **Last Updated**: 2025-01-14  
-> **Current Version**: v5.2.0  
+> **Last Updated**: 2025-10-14  
+> **Current Version**: v5.3.1  
 > **Status**: Production Ready
 
 ## 🎯 Project Overview
@@ -69,7 +69,87 @@ interface Layout {
 }
 ```
 
-## ✅ Recently Completed (v5.2.0 - 2025-01-14)
+## ✅ Recently Completed (v5.3.1 - 2025-10-14)
+
+### 自動版本檢查與更新
+**Problem**: 部署新代碼後，已運行的播放器還在使用舊代碼，需要手動重啟才能更新。開機自動啟動時圖片無法顯示（容器尺寸為 0）。
+
+**Solution**: 實現自動版本檢查機制和容器尺寸驗證，確保播放器自動更新和正確初始化。
+
+#### Key Features
+1. **自動版本檢查**:
+   - 播放器內建版本號 `PLAYER_VERSION`
+   - 每 5 分鐘自動獲取服務器上的 animation.js 並比對版本
+   - 發現新版本時延遲 3 秒後自動 `window.location.reload(true)`
+   - 無需手動重啟設備
+
+2. **容器尺寸驗證與重試**:
+   - 在 updateSection 開始時檢查容器尺寸
+   - 如果 width 或 height 為 0，延遲 500ms 後重試
+   - 解決開機自動啟動時容器尚未渲染完成的問題
+
+3. **改進初始化時機**:
+   - 改用 `window.addEventListener('load')` 代替 `DOMContentLoaded`
+   - 在 window.load 後再延遲 100ms 啟動播放器
+   - 確保所有 DOM 元素和樣式完全載入
+
+4. **快捷鍵支持**:
+   - `Ctrl+V` (或 `Cmd+V`): 手動檢查版本
+   - `Ctrl+R` (或 `Cmd+R`): 強制重新載入
+   - `Ctrl+D` (或 `Cmd+D`): 切換調試面板
+
+#### Files Modified
+- `public/js/animation.js`: 添加版本檢查、容器驗證、快捷鍵
+- `package.json`: 版本升級至 v5.3.1
+
+#### Testing Verification
+- ✅ 開機自動啟動時圖片正常顯示
+- ✅ 部署新版本後 5 分鐘內自動更新
+- ✅ 手動執行 `./kiosk.sh` 時正常顯示
+- ✅ 容器尺寸為 0 時自動重試
+
+### Previous (v5.3.0 - 2025-10-14)
+
+### 雙影片布局修復與響應式優化
+**Problem**: 雙影片布局預覽正常但實際設備圖片無法顯示；影片被裁切導致邊緣文字看不見；不同分辨率下顯示異常。
+
+**Solution**: 修復容器重複處理 bug，添加響應式支持，優化媒體顯示方式。
+
+#### Key Fixes
+1. **容器重複處理 Bug**:
+   - 問題：`bottom_right` 和 `carousel_bottom_right` 都映射到同一個容器
+   - 第二次調用時執行 `container.innerHTML = ''` 清空了第一次創建的內容
+   - 解決：使用 `Set` 追蹤已處理的容器，確保每個容器只處理一次
+
+2. **響應式布局**:
+   - 添加 window resize 事件監聽
+   - 使用 debounce（300ms）優化性能
+   - 重新渲染時重新計算容器尺寸並重建 DOM
+
+3. **媒體顯示優化**:
+   - 將 `object-fit` 從 `cover` 改為 `contain`
+   - 避免影片和圖片被裁切，完整顯示內容
+   - 添加黑色背景確保視覺一致性
+
+4. **樣式強制應用**:
+   - 使用 `!important` 確保樣式在各種設備上生效
+   - 直接讀取容器實際尺寸（px）而非使用百分比
+   - 避免 CSS 繼承問題
+
+#### Files Modified
+- `public/js/animation.js` (lines 220-400): 添加 resize 監聽、容器追蹤、強制樣式
+- `public/default.html` (line 21): 改 object-fit 為 contain
+- `public/dual_video.html` (line 35): 改 object-fit 為 contain
+- `package.json` (line 3): 版本升級至 v5.3.0
+
+#### Testing Verification
+- ✅ 雙影片布局圖片正常顯示
+- ✅ 支援 1080x1920 直立式屏幕
+- ✅ 視窗大小改變時自動重新渲染
+- ✅ 影片完整顯示不被裁切
+- ✅ 圖片完整顯示不被裁切
+
+### Previous (v5.2.0 - 2025-01-14)
 
 ### Layout Template System
 **Problem**: All layouts use the same fixed 6-block structure. Need flexibility for different display requirements (e.g., dual video layout for driving schools).
@@ -147,6 +227,14 @@ interface Layout {
 - ✅ R2 cleanup on group deletion
 
 ## 🔧 Known Issues & Quirks
+
+### Investigating
+1. **實際設備圖片顯示問題** - 預覽正常但部分實際設備無法顯示圖片
+   - 可能原因：設備瀏覽器版本過舊不支持某些 CSS
+   - 可能原因：設備緩存未清除
+   - 可能原因：設備未正確指派到版面
+   - 診斷方法：檢查設備瀏覽器控制台錯誤信息
+   - 臨時解決：強制刷新設備頁面（Ctrl+Shift+R）或清除瀏覽器緩存
 
 ### Non-Critical
 1. **Orphan Assignments** - Old assignments may reference deleted materials

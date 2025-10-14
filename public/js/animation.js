@@ -1,3 +1,6 @@
+// Version check
+const PLAYER_VERSION = '5.3.1';
+
 // Global settings defaults
 const DEFAULT_INTERVALS = {
   header_interval: 5000,
@@ -213,7 +216,19 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     const containerHeight = containerRect.height;
     const containerWidth = containerRect.width;
     
-    console.log(`📏 Using container dimensions: ${containerWidth}x${containerHeight}px`);
+    console.log(`📏 Container dimensions: ${containerWidth}x${containerHeight}px`);
+    
+    // If container has no size yet, retry after a delay
+    if (containerHeight === 0 || containerWidth === 0) {
+        console.warn(`⚠️ Container #${containerId} has zero dimensions, retrying in 500ms...`);
+        setTimeout(() => {
+            console.log(`🔄 Retrying updateSection for ${sectionKey}...`);
+            updateSection(sectionKey, data, containerId, slideInterval);
+        }, 500);
+        return;
+    }
+    
+    console.log(`✅ Using container dimensions: ${containerWidth}x${containerHeight}px`);
     
     const carouselContainer = document.createElement('div');
     carouselContainer.className = 'carousel-container';
@@ -283,8 +298,9 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
             mediaElement.style.cssText = `
                 width: ${containerWidth}px !important;
                 height: ${containerHeight}px !important;
-                object-fit: cover !important;
+                object-fit: contain !important;
                 display: block !important;
+                background-color: black !important;
             `;
         } else {
             mediaElement = document.createElement('img');
@@ -293,8 +309,9 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
             mediaElement.style.cssText = `
                 width: ${containerWidth}px !important;
                 height: ${containerHeight}px !important;
-                object-fit: cover !important;
+                object-fit: contain !important;
                 display: block !important;
+                background-color: black !important;
             `;
             
             // Debug: check image after load
@@ -476,8 +493,9 @@ function showDebugInfo() {
     updateDebugOverlay('Active');
 }
 
-// Toggle debug overlay with Ctrl+D (or Cmd+D on Mac)
+// Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+    // Toggle debug overlay with Ctrl+D (or Cmd+D on Mac)
     if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
         e.preventDefault();
         const overlay = document.getElementById('debug-overlay');
@@ -486,10 +504,79 @@ document.addEventListener('keydown', (e) => {
             console.log(`Debug overlay ${overlay.style.display === 'block' ? 'shown' : 'hidden'}`);
         }
     }
+    
+    // Force reload with Ctrl+R (or Cmd+R on Mac)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+        e.preventDefault();
+        console.log('🔄 Force reloading...');
+        window.location.reload(true);
+    }
+    
+    // Check version with Ctrl+V (or Cmd+V on Mac)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        console.log('🔍 Checking for updates...');
+        checkVersion();
+    }
 });
+
+// Manual version check function
+async function checkVersion() {
+    try {
+        const response = await fetch('/js/animation.js?' + Date.now());
+        const text = await response.text();
+        const versionMatch = text.match(/const PLAYER_VERSION = '([^']+)'/);
+        
+        if (versionMatch && versionMatch[1]) {
+            const serverVersion = versionMatch[1];
+            console.log(`📌 Current version: ${PLAYER_VERSION}`);
+            console.log(`📡 Server version: ${serverVersion}`);
+            
+            if (serverVersion !== PLAYER_VERSION) {
+                console.warn(`⚠️ Version mismatch! Reloading in 3 seconds...`);
+                setTimeout(() => window.location.reload(true), 3000);
+            } else {
+                console.log(`✅ Up to date!`);
+            }
+        }
+    } catch (error) {
+        console.error('❌ Version check failed:', error);
+    }
+}
 
 // Store current data for resize handling
 let currentData = null;
+
+// Version check - periodically check for updates and reload if needed
+function startVersionCheck() {
+    console.log(`📌 Current player version: ${PLAYER_VERSION}`);
+    
+    // Check version every 5 minutes
+    setInterval(async () => {
+        try {
+            // Fetch the animation.js file to check version
+            const response = await fetch('/js/animation.js?' + Date.now());
+            const text = await response.text();
+            
+            // Extract version from the fetched file
+            const versionMatch = text.match(/const PLAYER_VERSION = '([^']+)'/);
+            if (versionMatch && versionMatch[1]) {
+                const serverVersion = versionMatch[1];
+                if (serverVersion !== PLAYER_VERSION) {
+                    console.warn(`🔄 New version detected: ${serverVersion} (current: ${PLAYER_VERSION})`);
+                    console.log('⚡ Reloading player in 3 seconds...');
+                    setTimeout(() => {
+                        window.location.reload(true); // Force reload from server
+                    }, 3000);
+                } else {
+                    console.log(`✅ Version check: up to date (${PLAYER_VERSION})`);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Version check failed:', error);
+        }
+    }, 5 * 60 * 1000); // 5 minutes
+}
 
 // Handle window resize for responsive layout
 let resizeTimeout;
@@ -503,9 +590,9 @@ window.addEventListener('resize', () => {
     }, 300); // Debounce resize events
 });
 
-// Main initialization on DOMContentLoaded
-document.addEventListener("DOMContentLoaded", () => {
-    console.log('🚀 Page loaded, initializing MQ CMS Player...');
+// Initialize player
+function initializePlayer() {
+    console.log('🚀 Initializing MQ CMS Player...');
     currentDeviceId = getDeviceId();
     if (currentDeviceId) {
         console.log(`✅ Device ID obtained: ${currentDeviceId}`);
@@ -517,7 +604,20 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
         initializeWebSocket();
+        startVersionCheck(); // Start periodic version checking
     } else {
         console.error('❌ Failed to get device ID!');
     }
+}
+
+// Main initialization - use both DOMContentLoaded and load events for safety
+document.addEventListener("DOMContentLoaded", () => {
+    console.log('📄 DOM Content Loaded');
+});
+
+// Wait for window.load to ensure all containers are properly sized
+window.addEventListener('load', () => {
+    console.log('🎬 Window fully loaded, starting player...');
+    // Add small delay to ensure rendering is complete
+    setTimeout(initializePlayer, 100);
 });
