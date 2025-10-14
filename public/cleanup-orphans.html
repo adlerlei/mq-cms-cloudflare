@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>清理孤兒指派</title>
+    <script src="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"></script>
+</head>
+<body>
+    <section class="section">
+        <div class="container">
+            <h1 class="title">清理孤兒指派工具</h1>
+            <div class="box">
+                <div class="field">
+                    <label class="label">版面名稱</label>
+                    <div class="control">
+                        <input class="input" type="text" id="layoutName" value="雙影片測試">
+                    </div>
+                </div>
+                <div class="field">
+                    <div class="control">
+                        <button class="button is-primary" onclick="cleanupOrphans()">檢查並清理</button>
+                    </div>
+                </div>
+            </div>
+            <div id="results" class="content"></div>
+        </div>
+    </section>
+
+    <script>
+        async function cleanupOrphans() {
+            const layoutName = document.getElementById('layoutName').value;
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p>處理中...</p>';
+
+            const token = localStorage.getItem('jwt_token');
+            if (!token) {
+                resultsDiv.innerHTML = '<p class="has-text-danger">請先登入管理後台</p>';
+                return;
+            }
+
+            try {
+                // 獲取素材和指派
+                const [materialsRes, assignmentsRes] = await Promise.all([
+                    fetch(`/api/materials?layout=${layoutName}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`/api/assignments?layout=${layoutName}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                ]);
+
+                const materials = await materialsRes.json();
+                const assignments = await assignmentsRes.json();
+
+                // 找出孤兒指派
+                const orphans = assignments.filter(a => {
+                    if (a.content_type === 'single_media') {
+                        return !materials.find(m => m.id === a.content_id);
+                    }
+                    return false;
+                });
+
+                resultsDiv.innerHTML = `
+                    <h3>檢查結果</h3>
+                    <p>總指派數：${assignments.length}</p>
+                    <p>孤兒指派數：${orphans.length}</p>
+                `;
+
+                if (orphans.length > 0) {
+                    resultsDiv.innerHTML += '<h4>孤兒指派列表：</h4><ul>';
+                    orphans.forEach(o => {
+                        resultsDiv.innerHTML += `<li>ID: ${o.id}, Section: ${o.section_key}, Content ID: ${o.content_id}</li>`;
+                    });
+                    resultsDiv.innerHTML += '</ul>';
+
+                    // 刪除孤兒指派
+                    resultsDiv.innerHTML += '<p class="has-text-warning">正在刪除...</p>';
+                    
+                    for (const orphan of orphans) {
+                        await fetch(`/api/assignments/${orphan.id}?layout=${layoutName}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                    }
+
+                    resultsDiv.innerHTML += '<p class="has-text-success">✅ 清理完成！請重新載入預覽頁面。</p>';
+                } else {
+                    resultsDiv.innerHTML += '<p class="has-text-success">✅ 沒有發現孤兒指派</p>';
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<p class="has-text-danger">錯誤：${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

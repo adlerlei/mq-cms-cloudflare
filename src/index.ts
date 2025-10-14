@@ -122,6 +122,11 @@ export class MessageBroadcaster {
                 }
 				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
 			}
+			if (path === '/api/assignments/bulk' && method === 'PUT') {
+				const assignments = await request.json() as Assignment[];
+				await this.state.storage.put(layoutKey(layoutName, 'assignments'), assignments);
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+			}
 			if (path === '/api/groups' && method === 'GET') {
 				const groups = await this.getGroups(layoutName);
 				return new Response(JSON.stringify(groups), { headers: { 'Content-Type': 'application/json' } });
@@ -169,6 +174,12 @@ export class MessageBroadcaster {
 				const name = decodeURIComponent(path.replace('/api/layouts/', ''));
 				if (name === 'default') return new Response('Cannot delete default layout', { status: 400 });
 				await this.deleteLayout(name);
+				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
+			}
+			if (path.startsWith('/api/layouts/') && method === 'PATCH') {
+				const name = decodeURIComponent(path.replace('/api/layouts/', ''));
+				const updates = await request.json() as Partial<Layout>;
+				await this.updateLayout(name, updates);
 				return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } });
 			}
 			if (path === '/api/devices' && method === 'GET') {
@@ -252,6 +263,7 @@ export class MessageBroadcaster {
 	async saveSettings(layoutName: string, settings: Settings): Promise<void> { await this.state.storage.put(layoutKey(layoutName, 'settings'), settings); }
 	async getLayouts(): Promise<Layout[]> { const layouts = await this.state.storage.get<Layout[]>('layouts') || []; if (!layouts.some(l => l.name === 'default')) { layouts.unshift({ name: 'default', template: 'default', created_at: new Date().toISOString() }); await this.state.storage.put('layouts', layouts); } return layouts; }
 	async saveLayout(layout: Layout): Promise<void> { const layouts = await this.getLayouts(); if (!layouts.some(l => l.name === layout.name)) { layouts.push(layout); await this.state.storage.put('layouts', layouts); } }
+	async updateLayout(layoutName: string, updates: Partial<Layout>): Promise<void> { let layouts = await this.getLayouts(); const index = layouts.findIndex(l => l.name === layoutName); if (index !== -1) { layouts[index] = { ...layouts[index], ...updates }; await this.state.storage.put('layouts', layouts); } }
 	async deleteLayout(layoutName: string): Promise<void> { let layouts = await this.getLayouts(); layouts = layouts.filter(l => l.name !== layoutName); await this.state.storage.put('layouts', layouts); }
 	async getDevices(): Promise<Device[]> { return (await this.state.storage.get<Device[]>('devices')) || []; }
 	async saveDevice(device: Device): Promise<void> { let devices = await this.getDevices(); const index = devices.findIndex(d => d.id === device.id); if (index !== -1) { devices[index] = { ...devices[index], ...device }; } else { devices.push({ ...device, created_at: device.created_at || new Date().toISOString() }); } await this.state.storage.put('devices', devices); }
@@ -301,14 +313,38 @@ export default {
 				}
 			}
 
-			const [materials, assignments, groups, settings] = await Promise.all([
+			let [materials, assignments, groups, settings] = await Promise.all([
 				stub.fetch(`http://localhost/api/materials?layout=${layoutName}`).then(res => res.json()),
 				stub.fetch(`http://localhost/api/assignments?layout=${layoutName}`).then(res => res.json()),
 				stub.fetch(`http://localhost/api/groups?layout=${layoutName}`).then(res => res.json()),
 				stub.fetch(`http://localhost/api/settings?layout=${layoutName}`).then(res => res.json()),
 			]);
 			
-			console.log(`[/api/config] deviceId=${deviceId}, layoutName=${layoutName}, materials count=${materials.length}`);
+			// Auto-cleanup orphan assignments
+			const validMaterialIds = new Set((materials as any[]).map(m => m.id));
+			const validGroupIds = new Set((groups as any[]).map(g => g.id));
+			const originalLength = (assignments as any[]).length;
+			assignments = (assignments as any[]).filter(a => {
+				if (a.content_type === 'single_media') {
+					return validMaterialIds.has(a.content_id);
+				} else if (a.content_type === 'group_reference') {
+					return validGroupIds.has(a.content_id);
+				}
+				return true;
+			});
+			
+			// Save cleaned assignments if any were removed
+			if (assignments.length !== originalLength) {
+				console.log(`[Auto-cleanup] Removed ${originalLength - assignments.length} orphan assignments from ${layoutName}`);
+				const saveRequest = new Request(`http://localhost/api/assignments/bulk?layout=${layoutName}`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(assignments)
+				});
+				ctx.waitUntil(stub.fetch(saveRequest));
+			}
+			
+			console.log(`[/api/config] deviceId=${deviceId}, layoutName=${layoutName}, materials count=${materials.length}, assignments count=${assignments.length}`);
 			
 			const response = { layout: layoutName, materials, assignments, groups, settings, available_sections: { header_video: '頁首影片區', carousel_top_left: '左上輪播區', carousel_top_right: '右上輪播區', carousel_bottom_left: '左下輪播區', carousel_bottom_right: '右下輪播區', footer_content: '頁尾內容區' } };
 			return new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
