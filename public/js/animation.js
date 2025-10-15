@@ -1,5 +1,5 @@
 // Version check
-const PLAYER_VERSION = '5.3.3';
+const PLAYER_VERSION = '5.3.5';
 
 // Debug mode control - can be enabled via URL param (?debug=true) or keyboard shortcut (Ctrl+Shift+D)
 let DEBUG_MODE = false;
@@ -81,7 +81,7 @@ async function fetchMediaData() {
   }
 }
 
-function initializeGenericCarousel(containerElement, slideInterval, startOffset = 0) {
+function initializeGenericCarousel(containerElement, slideInterval, startOffset = 0, outerContainer = null) {
     if (!containerElement) return;
     const inner = containerElement.querySelector(".carousel-inner");
     if (!inner) return;
@@ -101,8 +101,20 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
         return;
     }
 
-    let currentIndex = Math.max(0, Math.min(startOffset, items.length - 1));
-    debugLog(`🔄 Carousel initialized: startOffset=${startOffset}, items.length=${items.length}, currentIndex=${currentIndex}`);
+    // Use outerContainer (the section container) to persist carousel state across DOM reconstructions
+    const stateContainer = outerContainer || containerElement;
+    
+    // Preserve current carousel position if container was already initialized
+    // This prevents the carousel from resetting to startOffset on every update
+    let currentIndex;
+    if (stateContainer._currentCarouselIndex !== undefined && stateContainer._currentCarouselIndex < items.length) {
+        currentIndex = stateContainer._currentCarouselIndex;
+        debugLog(`🔄 Carousel re-initialized: preserving position=${currentIndex}, items.length=${items.length}`);
+    } else {
+        currentIndex = Math.max(0, Math.min(startOffset, items.length - 1));
+        debugLog(`🔄 Carousel initialized: startOffset=${startOffset}, items.length=${items.length}, currentIndex=${currentIndex}`);
+    }
+    
     inner.style.transition = "none";
     inner.style.transform = `translateX(-${currentIndex * 100}%)`;
 
@@ -115,6 +127,7 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
         if (prevVideo) prevVideo.removeEventListener('ended', playNext);
 
         currentIndex++;
+        stateContainer._currentCarouselIndex = currentIndex % items.length; // Save current position
         inner.style.transition = "transform 0.5s ease";
         inner.style.transform = `translateX(-${currentIndex * 100}%)`;
 
@@ -122,6 +135,7 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
             if (currentIndex >= items.length) {
                 inner.style.transition = 'none';
                 currentIndex = 0;
+                stateContainer._currentCarouselIndex = 0; // Save reset position
                 inner.style.transform = `translateX(0%)`;
                 setTimeout(playCurrent, 20);
             }
@@ -145,6 +159,9 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
             playerTimeout = setTimeout(playNext, slideInterval);
         }
     }
+    
+    // Save initial position
+    stateContainer._currentCarouselIndex = currentIndex;
     playCurrent();
 }
 
@@ -191,8 +208,19 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
 
     const contentItems = [];
     let carouselOffset = 0;
+    
+    // First pass: find the carousel offset from the first assignment that has one
+    for (const assignment of sectionAssignments) {
+        if (assignment.offset !== undefined && assignment.offset !== null) {
+            carouselOffset = assignment.offset;
+            debugLog(`📌 Found carousel offset: ${assignment.offset} (from assignment ${assignment.id})`);
+            break; // Use the first offset found
+        }
+    }
+    
+    // Second pass: collect all content items
     sectionAssignments.forEach(assignment => {
-        debugLog(`  Processing assignment: type=${assignment.content_type}, content_id=${assignment.content_id}`);
+        debugLog(`  Processing assignment: type=${assignment.content_type}, content_id=${assignment.content_id}, offset=${assignment.offset}`);
         
         if (assignment.content_type === 'single_media') {
             const material = data.materials.find(m => m.id === assignment.content_id);
@@ -208,10 +236,6 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
             debugLog(`    Looking for group: ${assignment.content_id}`, group ? `Found: ${group.name}` : 'NOT FOUND');
             
             if (group && group.materials) {
-                if (assignment.offset !== undefined && assignment.offset !== null) {
-                    carouselOffset = assignment.offset;
-                    debugLog(`    📌 Setting carousel offset to: ${assignment.offset}`);
-                }
                 debugLog(`    Group has ${group.materials.length} materials:`, group.materials);
                 debugLog(`    Available materials in data:`, data.materials.map(m => m.id));
                 
@@ -332,7 +356,7 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
 
     if (contentItems.length > 0 && slideInterval > 0) {
         debugLog(`🎯 Initializing carousel for ${sectionKey} with offset=${carouselOffset}, total items=${contentItems.length}`);
-        initializeGenericCarousel(carouselContainer, slideInterval, carouselOffset);
+        initializeGenericCarousel(carouselContainer, slideInterval, carouselOffset, container);
     }
 }
 
@@ -574,14 +598,38 @@ function startVersionCheck() {
 
 // Handle window resize for responsive layout
 let resizeTimeout;
+let lastWidth = window.innerWidth;
+let lastHeight = window.innerHeight;
+
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
-        debugLog('🔄 Window resized, re-rendering content...');
-        if (currentData) {
-            updateAllSections(currentData);
+        const currentWidth = window.innerWidth;
+        const currentHeight = window.innerHeight;
+        
+        // Only re-render if size actually changed significantly (more than 10px)
+        if (Math.abs(currentWidth - lastWidth) > 10 || Math.abs(currentHeight - lastHeight) > 10) {
+            debugLog(`🔄 Window resized: ${lastWidth}x${lastHeight} → ${currentWidth}x${currentHeight}, re-rendering content...`);
+            lastWidth = currentWidth;
+            lastHeight = currentHeight;
+            
+            if (currentData) {
+                updateAllSections(currentData);
+            }
+        } else {
+            debugLog(`⏭️ Window size change too small (${currentWidth}x${currentHeight}), skipping re-render`);
         }
     }, 300); // Debounce resize events
+});
+
+// Handle visibility change (tab switching)
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        debugLog('👁️ Tab hidden - carousel will pause');
+    } else {
+        debugLog('👁️ Tab visible - carousel will resume');
+        // Don't re-render, just let carousels continue from where they were
+    }
 });
 
 // Initialize player

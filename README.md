@@ -116,12 +116,48 @@ mq-cms-cloudflare/
 
 ---
 
-## 調試模式
+## 預覽與調試
 
-### 播放器調試
-- URL 參數：`?deviceId=preview-default&debug=true`
-- 快捷鍵：`Ctrl+Shift+D`（切換調試模式）
-- 快捷鍵：`Ctrl+D`（切換調試面板）
+### 版面預覽選擇器
+**快速入口**：`/preview.html`
+- 列出所有可用版面
+- 一鍵開啟預覽
+
+### 直接預覽版面
+
+**預設版面**：
+```
+本地：http://localhost:8787/default.html?deviceId=preview-default
+生產：https://mq-cms.adler-lei.workers.dev/default.html?deviceId=preview-default
+```
+
+**雙影片版面**：
+```
+本地：http://localhost:8787/dual_video.html?deviceId=preview-dual_video
+生產：https://mq-cms.adler-lei.workers.dev/dual_video.html?deviceId=preview-dual_video
+```
+
+**自訂版面**（將 `your-layout` 替換為版面名稱）：
+```
+/default.html?deviceId=preview-your-layout
+```
+
+### 調試模式
+
+**開啟調試模式**：
+```
+/default.html?deviceId=preview-default&debug=true
+```
+
+**快捷鍵**：
+- `Ctrl+Shift+D`（切換調試日誌輸出）
+- `Ctrl+D`（切換調試面板顯示）
+
+**調試功能**：
+- 📊 顯示所有內部處理邏輯
+- 🔍 查看輪播初始化和偏移量
+- 📡 監控 WebSocket 連接狀態
+- 🎯 追蹤內容加載和區塊更新
 
 ---
 
