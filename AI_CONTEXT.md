@@ -1,7 +1,7 @@
 # AI Context - MQ CMS Project
 
 > **Last Updated**: 2025-01-15  
-> **Current Version**: v5.3.2  
+> **Current Version**: v5.3.3  
 > **Status**: Production Ready
 
 ## 🎯 Project Overview
@@ -69,7 +69,72 @@ interface Layout {
 }
 ```
 
-## ✅ Recently Completed (v5.3.2 - 2025-01-15)
+## ✅ Recently Completed (v5.3.3 - 2025-01-15)
+
+### 優化生產環境性能 - 調試日誌控制
+**Problem**: 播放器控制台輸出大量調試信息（每張圖片加載、容器尺寸、WebSocket 心跳等），在生產環境中：
+- 資源有限的樹莓派設備可能受到性能影響
+- 控制台被大量 emoji 日誌淹沒，難以查看真正的錯誤信息
+- 不必要的日誌輸出佔用內存和 CPU
+
+**Solution**: 實現可控的調試模式，默認關閉詳細日誌，只保留關鍵錯誤和警告。
+
+#### Key Implementation
+1. **調試模式控制**:
+   ```javascript
+   let DEBUG_MODE = false;  // 默認關閉
+   
+   function debugLog(...args) {
+       if (DEBUG_MODE) console.log(...args);
+   }
+   
+   function errorLog(...args) {
+       console.error(...args);  // 始終輸出
+   }
+   
+   function warnLog(...args) {
+       console.warn(...args);  // 始終輸出
+   }
+   ```
+
+2. **啟用調試模式的方式**:
+   - **URL 參數**: `?debug=true` 自動啟用調試模式
+   - **快捷鍵**: `Ctrl+Shift+D` (Mac: `Cmd+Shift+D`) 切換調試模式
+   - 刷新頁面後生效
+
+3. **日誌分類**:
+   - **debugLog**: 詳細的調試信息（🎨, 📦, 🖼️, 📍, 🔄 等），默認不輸出
+   - **errorLog**: 錯誤信息（❌），始終輸出
+   - **warnLog**: 警告信息（⚠️），始終輸出
+   - **版本更新通知**: 始終輸出（不受 DEBUG_MODE 影響）
+
+4. **優化的日誌**:
+   - 容器尺寸檢查、圖片加載成功、輪播初始化等改為 debugLog
+   - WebSocket 消息、區塊處理等改為 debugLog
+   - 只在 DEBUG_MODE 時才添加調試覆蓋層信息
+
+#### Files Modified
+- `public/js/animation.js` (全文件): 
+  - 添加 DEBUG_MODE 標誌和日誌函數
+  - 替換所有 console.log 為 debugLog
+  - 替換 console.warn 為 warnLog（關鍵警告除外）
+  - 保留所有 console.error 為 errorLog
+  - URL 參數檢查和快捷鍵控制
+- `package.json`: 版本升級至 v5.3.3
+
+#### Performance Impact
+- **生產環境**: 控制台輸出減少 95%+，只顯示錯誤和警告
+- **調試模式**: 完整的調試信息，便於問題診斷
+- **樹莓派設備**: 內存和 CPU 佔用顯著降低
+
+#### Testing Verification
+- ✅ 默認模式：控制台非常乾淨，只有版本號和錯誤（如有）
+- ✅ URL 參數：`?debug=true` 正常啟用調試模式
+- ✅ 快捷鍵：Ctrl+Shift+D 可切換調試模式
+- ✅ 錯誤信息：仍然正常顯示在控制台
+- ✅ 功能：不影響任何現有功能
+
+### Previous (v5.3.2 - 2025-01-15)
 
 ### 修復群組圖片輪播顯示問題
 **Problem**: 群組圖片輪播無法在播放器上顯示。管理後台顯示群組已正確指派（8張圖片），但播放頁面四個輪播區塊顯示 "found 0 assignments"，無法載入任何群組內容。

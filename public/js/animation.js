@@ -1,5 +1,8 @@
 // Version check
-const PLAYER_VERSION = '5.3.2';
+const PLAYER_VERSION = '5.3.3';
+
+// Debug mode control - can be enabled via URL param (?debug=true) or keyboard shortcut (Ctrl+Shift+D)
+let DEBUG_MODE = false;
 
 // Global settings defaults
 const DEFAULT_INTERVALS = {
@@ -11,6 +14,22 @@ const DEFAULT_INTERVALS = {
 // Globals for device and layout info
 let currentDeviceId = null;
 let currentLayoutName = null;
+
+// Debug logging function - only logs when DEBUG_MODE is enabled
+function debugLog(...args) {
+    if (DEBUG_MODE) {
+        console.log(...args);
+    }
+}
+
+// Always log errors and warnings
+function errorLog(...args) {
+    console.error(...args);
+}
+
+function warnLog(...args) {
+    console.warn(...args);
+}
 
 // Debug info helper
 function addDebugInfo(message) {
@@ -28,7 +47,7 @@ function getDeviceId() {
     const params = new URLSearchParams(window.location.search);
     const deviceId = params.get('deviceId');
     if (!deviceId) {
-        console.error("No deviceId provided in URL!");
+        errorLog("No deviceId provided in URL!");
         document.body.innerHTML = '<div style="color: red; font-size: 24px; text-align: center; padding: 50px;">Error: Missing deviceId parameter in URL.</div>';
     }
     return deviceId;
@@ -37,7 +56,7 @@ function getDeviceId() {
 // Fetch layout-specific data for the current device
 async function fetchMediaData() {
   if (!currentDeviceId) {
-    console.error("Cannot fetch data: deviceId is not set.");
+    errorLog("Cannot fetch data: deviceId is not set.");
     return null;
   }
   try {
@@ -47,8 +66,8 @@ async function fetchMediaData() {
       throw new Error(`Failed to fetch config: ${response.status}`);
     }
     const data = await response.json();
-    console.log(`Successfully fetched config for device ${currentDeviceId}:`, data);
-    console.log(`📊 Data summary:`, {
+    debugLog(`Successfully fetched config for device ${currentDeviceId}:`, data);
+    debugLog(`📊 Data summary:`, {
       materials: data.materials?.length || 0,
       assignments: data.assignments?.length || 0,
       groups: data.groups?.length || 0,
@@ -57,7 +76,7 @@ async function fetchMediaData() {
     currentLayoutName = data.layout; // Store the current layout name
     return data;
   } catch (error) {
-    console.error('fetchMediaData error:', error);
+    errorLog('fetchMediaData error:', error);
     return null;
   }
 }
@@ -83,7 +102,7 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
     }
 
     let currentIndex = Math.max(0, Math.min(startOffset, items.length - 1));
-    console.log(`🔄 Carousel initialized: startOffset=${startOffset}, items.length=${items.length}, currentIndex=${currentIndex}`);
+    debugLog(`🔄 Carousel initialized: startOffset=${startOffset}, items.length=${items.length}, currentIndex=${currentIndex}`);
     inner.style.transition = "none";
     inner.style.transform = `translateX(-${currentIndex * 100}%)`;
 
@@ -139,13 +158,13 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     
     // Log container dimensions
     const rect = container.getBoundingClientRect();
-    console.log(`📐 Container #${containerId} dimensions:`, {
+    debugLog(`📐 Container #${containerId} dimensions:`, {
         width: rect.width,
         height: rect.height,
         top: rect.top,
         left: rect.left
     });
-    addDebugInfo(`   └─ 📐 容器尺寸: ${Math.round(rect.width)}x${Math.round(rect.height)}px`);
+    if (DEBUG_MODE) addDebugInfo(`   └─ 📐 容器尺寸: ${Math.round(rect.width)}x${Math.round(rect.height)}px`);
 
     if (container.slideTimer) clearInterval(container.slideTimer);
     container.innerHTML = '';
@@ -165,84 +184,86 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     
     const possibleKeys = sectionKeyAliases[sectionKey] || [sectionKey];
     const sectionAssignments = data.assignments.filter(a => possibleKeys.includes(a.section_key));
-    console.log(`📍 Section ${sectionKey} (aliases: ${possibleKeys.join(', ')}): found ${sectionAssignments.length} assignments`);
-    addDebugInfo(`📍 ${sectionKey}: ${sectionAssignments.length} 個指派`);
+    debugLog(`📍 Section ${sectionKey} (aliases: ${possibleKeys.join(', ')}): found ${sectionAssignments.length} assignments`);
+    if (DEBUG_MODE) addDebugInfo(`📍 ${sectionKey}: ${sectionAssignments.length} 個指派`);
     
     if (sectionAssignments.length === 0) return;
 
     const contentItems = [];
     let carouselOffset = 0;
     sectionAssignments.forEach(assignment => {
-        console.log(`  Processing assignment: type=${assignment.content_type}, content_id=${assignment.content_id}`);
+        debugLog(`  Processing assignment: type=${assignment.content_type}, content_id=${assignment.content_id}`);
         
         if (assignment.content_type === 'single_media') {
             const material = data.materials.find(m => m.id === assignment.content_id);
             if (material) {
-                console.log(`    ✅ Found single media: ${material.filename}`);
+                debugLog(`    ✅ Found single media: ${material.filename}`);
                 contentItems.push(material);
             } else {
-                console.warn(`    ❌ Material not found: ${assignment.content_id}`);
-                addDebugInfo(`   └─ ❌ 素材不存在: ${assignment.content_id.substring(0, 8)} (孤兒指派)`);
+                warnLog(`    ❌ Material not found: ${assignment.content_id}`);
+                if (DEBUG_MODE) addDebugInfo(`   └─ ❌ 素材不存在: ${assignment.content_id.substring(0, 8)} (孤兒指派)`);
             }
         } else if (assignment.content_type === 'group_reference') {
             const group = data.groups.find(g => g.id === assignment.content_id);
-            console.log(`    Looking for group: ${assignment.content_id}`, group ? `Found: ${group.name}` : 'NOT FOUND');
+            debugLog(`    Looking for group: ${assignment.content_id}`, group ? `Found: ${group.name}` : 'NOT FOUND');
             
             if (group && group.materials) {
                 if (assignment.offset !== undefined && assignment.offset !== null) {
                     carouselOffset = assignment.offset;
-                    console.log(`    📌 Setting carousel offset to: ${assignment.offset}`);
+                    debugLog(`    📌 Setting carousel offset to: ${assignment.offset}`);
                 }
-                console.log(`    Group has ${group.materials.length} materials:`, group.materials);
-                console.log(`    Available materials in data:`, data.materials.map(m => m.id));
+                debugLog(`    Group has ${group.materials.length} materials:`, group.materials);
+                debugLog(`    Available materials in data:`, data.materials.map(m => m.id));
                 
                 // group.materials is an array of material IDs, need to find actual material objects
                 group.materials.forEach(materialId => {
                     const material = data.materials.find(m => m.id === materialId);
                     if (material) {
-                        console.log(`      ✅ Found material: ${material.filename}`);
+                        debugLog(`      ✅ Found material: ${material.filename}`);
                         contentItems.push(material);
                     } else {
-                        console.warn(`      ❌ Material not found for ID: ${materialId}`);
+                        warnLog(`      ❌ Material not found for ID: ${materialId}`);
                     }
                 });
             } else if (group && !group.materials) {
-                console.warn(`    ⚠️ Group found but has no materials array`);
+                warnLog(`    ⚠️ Group found but has no materials array`);
             }
         }
     });
 
-    console.log(`📦 Total content items collected: ${contentItems.length}`);
-    addDebugInfo(`   └─ 📦 收集到 ${contentItems.length} 個內容項目`);
+    debugLog(`📦 Total content items collected: ${contentItems.length}`);
+    if (DEBUG_MODE) addDebugInfo(`   └─ 📦 收集到 ${contentItems.length} 個內容項目`);
     if (contentItems.length === 0) {
-        console.warn(`⚠️ No content items to display for ${sectionKey}`);
-        addDebugInfo(`   └─ ⚠️ 無內容可顯示`);
+        debugLog(`⚠️ No content items to display for ${sectionKey}`);
+        if (DEBUG_MODE) addDebugInfo(`   └─ ⚠️ 無內容可顯示`);
         return;
     }
     
     // Show content details
-    contentItems.forEach((item, idx) => {
-        addDebugInfo(`   └─ [${idx}] ${item.type}: ${item.filename?.substring(0, 20)}`);
-    });
+    if (DEBUG_MODE) {
+        contentItems.forEach((item, idx) => {
+            addDebugInfo(`   └─ [${idx}] ${item.type}: ${item.filename?.substring(0, 20)}`);
+        });
+    }
 
     // Get container's computed dimensions
     const containerRect = container.getBoundingClientRect();
     const containerHeight = containerRect.height;
     const containerWidth = containerRect.width;
     
-    console.log(`📏 Container dimensions: ${containerWidth}x${containerHeight}px`);
+    debugLog(`📏 Container dimensions: ${containerWidth}x${containerHeight}px`);
     
     // If container has no size yet, retry after a delay
     if (containerHeight === 0 || containerWidth === 0) {
-        console.warn(`⚠️ Container #${containerId} has zero dimensions, retrying in 500ms...`);
+        warnLog(`⚠️ Container #${containerId} has zero dimensions, retrying in 500ms...`);
         setTimeout(() => {
-            console.log(`🔄 Retrying updateSection for ${sectionKey}...`);
+            debugLog(`🔄 Retrying updateSection for ${sectionKey}...`);
             updateSection(sectionKey, data, containerId, slideInterval);
         }, 500);
         return;
     }
     
-    console.log(`✅ Using container dimensions: ${containerWidth}x${containerHeight}px`);
+    debugLog(`✅ Using container dimensions: ${containerWidth}x${containerHeight}px`);
     
     const carouselContainer = document.createElement('div');
     carouselContainer.className = 'carousel-container';
@@ -254,15 +275,17 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     carouselContainer.appendChild(carouselInner);
     container.appendChild(carouselContainer);
     
-    console.log(`🎨 Carousel container created, checking dimensions...`);
-    setTimeout(() => {
-        const containerRect = carouselContainer.getBoundingClientRect();
-        const innerRect = carouselInner.getBoundingClientRect();
-        
-        console.log(`📦 carouselContainer: ${containerRect.width}x${containerRect.height}`);
-        console.log(`📦 carouselInner: ${innerRect.width}x${innerRect.height}`);
-        addDebugInfo(`   └─ 📦 輪播容器: ${Math.round(containerRect.width)}x${Math.round(containerRect.height)}px`);
-    }, 50);
+    if (DEBUG_MODE) {
+        debugLog(`🎨 Carousel container created, checking dimensions...`);
+        setTimeout(() => {
+            const containerRect = carouselContainer.getBoundingClientRect();
+            const innerRect = carouselInner.getBoundingClientRect();
+            
+            debugLog(`📦 carouselContainer: ${containerRect.width}x${containerRect.height}`);
+            debugLog(`📦 carouselInner: ${innerRect.width}x${innerRect.height}`);
+            addDebugInfo(`   └─ 📦 輪播容器: ${Math.round(containerRect.width)}x${Math.round(containerRect.height)}px`);
+        }, 50);
+    }
 
     contentItems.forEach((item, idx) => {
         const itemWrapper = document.createElement('div');
@@ -283,30 +306,32 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
             // Let CSS control media sizing
             
             // Debug: check image after load
-            mediaElement.addEventListener('load', () => {
-                console.log(`🖼️ Image loaded [${idx}]:`, {
-                    naturalWidth: mediaElement.naturalWidth,
-                    naturalHeight: mediaElement.naturalHeight,
-                    displayWidth: mediaElement.width,
-                    displayHeight: mediaElement.height,
-                    url: item.url
+            if (DEBUG_MODE) {
+                mediaElement.addEventListener('load', () => {
+                    debugLog(`🖼️ Image loaded [${idx}]:`, {
+                        naturalWidth: mediaElement.naturalWidth,
+                        naturalHeight: mediaElement.naturalHeight,
+                        displayWidth: mediaElement.width,
+                        displayHeight: mediaElement.height,
+                        url: item.url
+                    });
                 });
-            });
+            }
             
             mediaElement.addEventListener('error', (e) => {
-                console.error(`❌ Image failed to load [${idx}]:`, item.url, e);
-                addDebugInfo(`   └─ ❌ 圖片載入失敗: ${item.filename}`);
+                errorLog(`❌ Image failed to load [${idx}]:`, item.url, e);
+                if (DEBUG_MODE) addDebugInfo(`   └─ ❌ 圖片載入失敗: ${item.filename}`);
             });
         }
         itemWrapper.appendChild(mediaElement);
         carouselInner.appendChild(itemWrapper);
-        console.log(`✅ Created DOM element [${idx}]: ${item.type} - ${item.url}`);
+        debugLog(`✅ Created DOM element [${idx}]: ${item.type} - ${item.url}`);
     });
     
-    addDebugInfo(`   └─ ✅ 已創建 ${contentItems.length} 個 DOM 元素`);
+    if (DEBUG_MODE) addDebugInfo(`   └─ ✅ 已創建 ${contentItems.length} 個 DOM 元素`);
 
     if (contentItems.length > 0 && slideInterval > 0) {
-        console.log(`🎯 Initializing carousel for ${sectionKey} with offset=${carouselOffset}, total items=${contentItems.length}`);
+        debugLog(`🎯 Initializing carousel for ${sectionKey} with offset=${carouselOffset}, total items=${contentItems.length}`);
         initializeGenericCarousel(carouselContainer, slideInterval, carouselOffset);
     }
 }
@@ -363,25 +388,25 @@ function updateAllSections(data) {
 // WebSocket initialization
 function initializeWebSocket() {
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
-    console.log(`🔌 Connecting to WebSocket: ${wsUrl}`);
+    debugLog(`🔌 Connecting to WebSocket: ${wsUrl}`);
     const socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
-        console.log(`✅ WebSocket connected successfully`);
-        console.log(`📡 Listening for updates to layout: ${currentLayoutName}`);
+        debugLog(`✅ WebSocket connected successfully`);
+        debugLog(`📡 Listening for updates to layout: ${currentLayoutName}`);
     };
 
     socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        console.log(`📨 WebSocket message received:`, data);
+        debugLog(`📨 WebSocket message received:`, data);
         
         if (data.type === 'ping') {
             socket.send(JSON.stringify({ type: 'pong' }));
         } else if (data.type === 'section_updated' || data.type === 'settings_updated') {
-            console.log(`🔔 Update notification: type=${data.type}, layout=${data.layout}, section=${data.section_key}`);
+            debugLog(`🔔 Update notification: type=${data.type}, layout=${data.layout}, section=${data.section_key}`);
             // Only refresh if the update is for our current layout
             if (data.layout && data.layout === currentLayoutName) {
-                console.log(`✅ Update is for current layout (${currentLayoutName}). Refreshing...`);
+                debugLog(`✅ Update is for current layout (${currentLayoutName}). Refreshing...`);
                 fetchMediaData().then(newData => {
                     if (newData) {
                         currentData = newData; // Update stored data
@@ -389,40 +414,40 @@ function initializeWebSocket() {
                     }
                 });
             } else {
-                console.log(`⏭️ Update is for different layout (${data.layout} vs ${currentLayoutName}). Ignoring.`);
+                debugLog(`⏭️ Update is for different layout (${data.layout} vs ${currentLayoutName}). Ignoring.`);
             }
         } else if (data.type === 'device_assigned') {
             // Check if this device was reassigned
             if (data.deviceId === currentDeviceId) {
-                console.log(`⚡ This device (${currentDeviceId}) was reassigned to layout: ${data.layoutName}`);
-                console.log(`Current layout: ${currentLayoutName} -> New layout: ${data.layoutName}`);
+                debugLog(`⚡ This device (${currentDeviceId}) was reassigned to layout: ${data.layoutName}`);
+                debugLog(`Current layout: ${currentLayoutName} -> New layout: ${data.layoutName}`);
                 
                 // If layout changed, fetch new configuration
                 if (data.layoutName !== currentLayoutName) {
-                    console.log('🔄 Layout changed! Fetching new configuration...');
+                    debugLog('🔄 Layout changed! Fetching new configuration...');
                     updateDebugOverlay('Switching layout...');
                     fetchMediaData().then(newData => {
                         if (newData) {
                             currentData = newData; // Update stored data
-                            console.log(`✅ Successfully switched to layout: ${newData.layout}`);
+                            debugLog(`✅ Successfully switched to layout: ${newData.layout}`);
                             updateAllSections(newData);
                             updateDebugOverlay('Active');
                         }
                     });
                 } else {
-                    console.log('ℹ️ Layout unchanged, no action needed.');
+                    debugLog('ℹ️ Layout unchanged, no action needed.');
                 }
             }
         }
     };
 
     socket.onclose = () => {
-        console.log('WebSocket closed. Reconnecting in 5 seconds...');
+        warnLog('WebSocket closed. Reconnecting in 5 seconds...');
         setTimeout(initializeWebSocket, 5000);
     };
 
     socket.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        errorLog('WebSocket error:', error);
         socket.close();
     };
 }
@@ -440,21 +465,29 @@ function updateDebugOverlay(status) {
 
 // Create a debug info overlay (only visible in console or can be toggled)
 function showDebugInfo() {
-    console.log('═══════════════════════════════════════');
-    console.log('📺 MQ CMS Player - Debug Info');
-    console.log('═══════════════════════════════════════');
-    console.log(`🆔 Device ID: ${currentDeviceId}`);
-    console.log(`📋 Current Layout: ${currentLayoutName || 'Loading...'}`);
-    console.log(`🌐 WebSocket: ${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
-    console.log('═══════════════════════════════════════');
-    console.log('💡 Tip: Press Ctrl+D (or Cmd+D on Mac) to toggle debug overlay');
+    debugLog('═══════════════════════════════════════');
+    debugLog('📺 MQ CMS Player - Debug Info');
+    debugLog('═══════════════════════════════════════');
+    debugLog(`🆔 Device ID: ${currentDeviceId}`);
+    debugLog(`📋 Current Layout: ${currentLayoutName || 'Loading...'}`);
+    debugLog(`🌐 WebSocket: ${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
+    debugLog('═══════════════════════════════════════');
+    debugLog('💡 Tip: Press Ctrl+Shift+D to toggle debug mode, Ctrl+D to toggle debug overlay');
     updateDebugOverlay('Active');
 }
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+    // Toggle debug mode with Ctrl+Shift+D (or Cmd+Shift+D on Mac)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        DEBUG_MODE = !DEBUG_MODE;
+        console.log(`🐞 Debug mode ${DEBUG_MODE ? 'ENABLED' : 'DISABLED'}`);
+        console.log('Tip: Refresh the page to see changes');
+    }
+    
     // Toggle debug overlay with Ctrl+D (or Cmd+D on Mac)
-    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'd') {
         e.preventDefault();
         const overlay = document.getElementById('debug-overlay');
         if (overlay) {
@@ -498,7 +531,7 @@ async function checkVersion() {
             }
         }
     } catch (error) {
-        console.error('❌ Version check failed:', error);
+        errorLog('❌ Version check failed:', error);
     }
 }
 
@@ -507,7 +540,7 @@ let currentData = null;
 
 // Version check - periodically check for updates and reload if needed
 function startVersionCheck() {
-    console.log(`📌 Current player version: ${PLAYER_VERSION}`);
+    debugLog(`📌 Current player version: ${PLAYER_VERSION}`);
     
     // Check version every 5 minutes
     setInterval(async () => {
@@ -527,11 +560,11 @@ function startVersionCheck() {
                         window.location.reload(true); // Force reload from server
                     }, 3000);
                 } else {
-                    console.log(`✅ Version check: up to date (${PLAYER_VERSION})`);
+                    debugLog(`✅ Version check: up to date (${PLAYER_VERSION})`);
                 }
             }
         } catch (error) {
-            console.error('❌ Version check failed:', error);
+            errorLog('❌ Version check failed:', error);
         }
     }, 5 * 60 * 1000); // 5 minutes
 }
@@ -541,7 +574,7 @@ let resizeTimeout;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
-        console.log('🔄 Window resized, re-rendering content...');
+        debugLog('🔄 Window resized, re-rendering content...');
         if (currentData) {
             updateAllSections(currentData);
         }
@@ -550,10 +583,17 @@ window.addEventListener('resize', () => {
 
 // Initialize player
 function initializePlayer() {
-    console.log('🚀 Initializing MQ CMS Player...');
+    // Check for debug mode from URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('debug') === 'true') {
+        DEBUG_MODE = true;
+        console.log('🐞 Debug mode enabled via URL parameter');
+    }
+    
+    debugLog('🚀 Initializing MQ CMS Player...');
     currentDeviceId = getDeviceId();
     if (currentDeviceId) {
-        console.log(`✅ Device ID obtained: ${currentDeviceId}`);
+        debugLog(`✅ Device ID obtained: ${currentDeviceId}`);
         fetchMediaData().then(data => {
             if (data) {
                 currentData = data; // Store for resize handling
@@ -564,18 +604,18 @@ function initializePlayer() {
         initializeWebSocket();
         startVersionCheck(); // Start periodic version checking
     } else {
-        console.error('❌ Failed to get device ID!');
+        errorLog('❌ Failed to get device ID!');
     }
 }
 
 // Main initialization - use both DOMContentLoaded and load events for safety
 document.addEventListener("DOMContentLoaded", () => {
-    console.log('📄 DOM Content Loaded');
+    debugLog('📄 DOM Content Loaded');
 });
 
 // Wait for window.load to ensure all containers are properly sized
 window.addEventListener('load', () => {
-    console.log('🎬 Window fully loaded, starting player...');
+    debugLog('🎬 Window fully loaded, starting player...');
     // Add small delay to ensure rendering is complete
     setTimeout(initializePlayer, 100);
 });
