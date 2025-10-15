@@ -1,5 +1,30 @@
 // MQ-CMS Admin Panel - Cloudflare Worker Version - Complete Implementation
 
+// --- LAYOUT TEMPLATES CONFIGURATION ---
+const LAYOUT_TEMPLATES = {
+    "default": {
+        name: "預設佈局（六區塊）",
+        sections: {
+            "header_video": "頁首影片區",
+            "top_left": "左上輪播區",
+            "top_right": "右上輪播區",
+            "bottom_left": "左下輪播區",
+            "bottom_right": "右下輪播區",
+            "footer_content": "頁尾內容區"
+        }
+    },
+    "dual_video": {
+        name: "雙影片佈局",
+        sections: {
+            "header_video": "頁首影片區",
+            "header_1_video": "第二頁首影片區",
+            "bottom_left": "左下輪播區",
+            "bottom_right": "右下輪播區",
+            "footer_content": "頁尾內容區"
+        }
+    }
+};
+
 // --- STATE MANAGEMENT ---
 let appState = {
     layouts: [],
@@ -12,15 +37,25 @@ let appState = {
     settings: {},
     available_sections: {
         'header_video': '頁首影片區',
-        'carousel_top_left': '左上輪播區',
-        'carousel_top_right': '右上輪播區',
-        'carousel_bottom_left': '左下輪播區',
-        'carousel_bottom_right': '右下輪播區',
+        'top_left': '左上輪播區',
+        'top_right': '右上輪播區',
+        'bottom_left': '左下輪播區',
+        'bottom_right': '右下輪播區',
         'footer_content': '頁尾內容區'
-    },
+    }
 };
 
 const stateSubscribers = [];
+
+// 根据当前 layout 的 template 更新 available_sections
+function updateAvailableSections() {
+    const currentLayout = appState.layouts.find(l => l.name === appState.activeLayout);
+    const template = currentLayout?.template || 'default';
+    const templateConfig = LAYOUT_TEMPLATES[template] || LAYOUT_TEMPLATES['default'];
+    
+    appState.available_sections = { ...templateConfig.sections };
+    console.log(`[updateAvailableSections] Layout: ${appState.activeLayout}, Template: ${template}, Sections:`, appState.available_sections);
+}
 
 function setState(newState) {
     const oldLayout = appState.activeLayout;
@@ -28,8 +63,13 @@ function setState(newState) {
 
     if (newState.activeLayout && newState.activeLayout !== oldLayout) {
         console.log(`Layout changed from ${oldLayout} to ${appState.activeLayout}. Re-rendering UI and fetching data...`);
+        updateAvailableSections(); // 更新可用区块
         stateSubscribers.forEach(callback => callback(appState));
         fetchLayoutData(appState.activeLayout);
+    } else if (newState.layouts) {
+        // layouts 数据更新时也需要更新 available_sections
+        updateAvailableSections();
+        stateSubscribers.forEach(callback => callback(appState));
     } else {
         stateSubscribers.forEach(callback => callback(appState));
     }
@@ -95,6 +135,10 @@ async function fetchLayoutData(layoutName) {
 
         appState = { ...appState, ...data, materials };
         console.log('Updated appState.materials:', appState.materials);
+        
+        // 更新可用区块（因为这里直接修改 appState，不经过 setState）
+        updateAvailableSections();
+        
         render();
     } catch (error) {
         console.error(`Failed to fetch data for layout '${layoutName}':`, error);
@@ -258,15 +302,20 @@ function renderCarouselGroups() {
 }
 
 function renderMediaLibrary() {
+    console.log('Rendering media library with materials:', appState.materials);
+    console.log('Assignments:', appState.assignments);
+    console.log('Groups:', appState.groups);
+    
+    // Only table view is supported
+    renderMediaLibraryTable();
+}
+
+function renderMediaLibraryTable() {
     const tbody = document.getElementById('mediaTableBody');
     if (!tbody) {
         console.error('mediaTableBody element not found');
         return;
     }
-
-    console.log('Rendering media library with materials:', appState.materials);
-    console.log('Assignments:', appState.assignments);
-    console.log('Groups:', appState.groups);
     
     const allItems = [];
     
@@ -294,12 +343,15 @@ function renderMediaLibrary() {
             const assignedSection = assignment ? appState.available_sections[assignment.section_key] : null;
             
             const preview = material.type === 'image' 
-                ? `<img src="${material.url}" alt="${material.filename}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;">`
+                ? `<img src="${material.url}" alt="${material.original_filename || material.filename}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;">`
                 : `<video src="${material.url}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;" muted></video>`;
             
             const statusBadge = assignedSection 
                 ? `<span class="tag is-success">${assignedSection}</span>`
                 : '<span class="tag is-light">未指派</span>';
+            
+            // Use original filename if available, otherwise fall back to the generated filename
+            const displayName = material.original_filename || material.filename;
                 
             allItems.push(`
                 <tr>
@@ -309,7 +361,7 @@ function renderMediaLibrary() {
                                 ${preview}
                             </div>
                             <div class="media-content">
-                                <p class="is-size-7"><strong>${material.filename}</strong></p>
+                                <p class="is-size-7"><strong>${displayName}</strong></p>
                                 <p class="is-size-7 has-text-grey">${formatFileSize(material.size)}</p>
                             </div>
                         </div>
@@ -429,36 +481,98 @@ function formatFileSize(bytes) {
 }
 
 function showNotification(message, type = 'info') {
+    // Create notification container if it doesn't exist
+    let container = document.getElementById('notification-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notification-container';
+        container.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            max-width: 600px;
+            width: 90%;
+            pointer-events: none;
+        `;
+        document.body.appendChild(container);
+    }
+    
     // Create notification element
     const notification = document.createElement('div');
     notification.className = `notification is-${type}`;
+    notification.style.cssText = `
+        margin-bottom: 10px;
+        pointer-events: auto;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    `;
     notification.innerHTML = `
         <button class="delete"></button>
         ${message}
     `;
     
-    document.body.prepend(notification);
+    container.appendChild(notification);
     
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-        notification.remove();
-    }, 5000);
+    // Trigger fade-in animation
+    requestAnimationFrame(() => {
+        notification.style.opacity = '1';
+        notification.style.transform = 'translateY(0)';
+    });
+    
+    // Auto-hide duration based on type
+    const duration = {
+        'success': 2000,  // 2秒 - 成功消息
+        'info': 3000,     // 3秒 - 信息消息
+        'warning': 4000,  // 4秒 - 警告消息
+        'danger': 5000    // 5秒 - 错误消息
+    }[type] || 3000;
+    
+    // Auto-hide with fade-out
+    const autoHideTimer = setTimeout(() => {
+        fadeOutAndRemove(notification);
+    }, duration);
     
     // Handle delete button
     notification.querySelector('.delete').addEventListener('click', () => {
-        notification.remove();
+        clearTimeout(autoHideTimer);
+        fadeOutAndRemove(notification);
     });
+    
+    // Helper function to fade out and remove
+    function fadeOutAndRemove(element) {
+        element.style.opacity = '0';
+        element.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+            element.remove();
+            // Remove container if empty
+            if (container.children.length === 0) {
+                container.remove();
+            }
+        }, 300);
+    }
 }
 
 // --- EVENT HANDLERS ---
 async function handleCreateLayout(e) {
     e.preventDefault();
     const input = document.getElementById('newLayoutName');
+    const templateSelect = document.getElementById('layoutTemplateSelect');
     const name = input.value.trim();
+    const template = templateSelect.value;
+    
     if (!name) return alert('Layout name is required.');
+    if (!template) return alert('Template is required.');
 
     try {
-        const newLayout = { name, created_at: new Date().toISOString() };
+        const newLayout = { 
+            name, 
+            template,
+            created_at: new Date().toISOString() 
+        };
         const response = await fetchWithAuth('/api/layouts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -467,7 +581,8 @@ async function handleCreateLayout(e) {
         if (!response.ok) throw new Error('Failed to create layout.');
         
         input.value = '';
-        showNotification(`版面 "${name}" 建立成功。`, 'success');
+        templateSelect.value = 'default';
+        showNotification(`版面 "${name}" (${template === 'default' ? '預設佈局' : '雙影片佈局'}) 建立成功。`, 'success');
         
         const newLayouts = [...appState.layouts, newLayout];
         setState({ layouts: newLayouts });
@@ -1130,7 +1245,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('deleteLayoutButton').addEventListener('click', handleDeleteLayout);
     document.getElementById('previewLayoutButton').addEventListener('click', () => {
         const layoutName = appState.activeLayout;
-        const previewUrl = `/display.html?deviceId=preview-${layoutName}`;
+        const previewUrl = `/display.html?deviceId=preview-${layoutName}&t=${Date.now()}`;
         window.open(previewUrl, '_blank');
     });
     document.body.addEventListener('change', e => {

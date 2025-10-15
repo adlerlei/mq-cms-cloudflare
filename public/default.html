@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MQAD</title>
+    <title>MQAD - 預設佈局</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         html, body {
             height: 100%;
             margin: 0;
             padding: 0;
-            overflow: hidden; /* 避免極端情況下出現捲軸 */
+            overflow: hidden;
         }
-        /* 為了讓 animation.js 的輪播能正確運作，補上一些基礎樣式 */
         .carousel-container { width: 100%; height: 100%; position: relative; overflow: hidden; }
         .carousel-inner { display: flex; height: 100%; }
         .carousel-item { flex: 0 0 100%; height: 100%; }
@@ -20,19 +19,17 @@
             width: 100%; 
             height: 100%; 
             object-fit: cover;
-            /* 關鍵修復：強制設定 video 的顯示尺寸，防止內在尺寸影響 flex 計算 */
             display: block;
+            background-color: black;
         }
         
-        /* 關鍵修復：為所有可能包含 video 的容器設定最小尺寸限制 */
         #header-container, #footer-container, 
         #slot-top-left, #slot-top-right, 
         #slot-bottom-left, #slot-bottom-right {
-            min-height: 0; /* 防止 flex 項目因內容而自動擴展 */
-            min-width: 0;  /* 防止 flex 項目因內容而自動擴展 */
+            min-height: 0;
+            min-width: 0;
         }
         
-        /* 確保 flex 容器不會因為 video 元素的內在尺寸而改變計算 */
         #middle-container, #top-row, #bottom-row {
             min-height: 0;
         }
@@ -40,33 +37,31 @@
 </head>
 <body>
     <div class="h-full w-screen flex flex-col bg-black relative">
-        <!-- Debug info overlay (hidden by default, can be shown with Ctrl+D) -->
+        <!-- Debug info overlay -->
         <div id="debug-overlay" style="display: none; position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: white; padding: 10px; border-radius: 5px; font-size: 12px; z-index: 9999; font-family: monospace;">
             <div><strong>Device ID:</strong> <span id="debug-device-id">-</span></div>
             <div><strong>Layout:</strong> <span id="debug-layout">-</span></div>
             <div><strong>Status:</strong> <span id="debug-status">Loading...</span></div>
         </div>
 
-        <div id="header-container" class="h-[32.3vh] relative flex-shrink-0">
-            </div>
+        <!-- 頁首影片區 -->
+        <!-- <div id="header-container" class="h-[32.3vh] relative flex-shrink-0"></div> -->
+        <div id="header-container" class="h-[32.3vh] relative flex-shrink-0"></div>
 
+        <!-- 中間四區塊 -->
         <div id="middle-container" class="flex-1 flex flex-col">
             <div id="top-row" class="flex-1 flex">
-                <div id="slot-top-left" class="flex-1 relative">
-                    </div>
-                <div id="slot-top-right" class="flex-1 relative">
-                    </div>
+                <div id="slot-top-left" class="flex-1 relative"></div>
+                <div id="slot-top-right" class="flex-1 relative"></div>
             </div>
             <div id="bottom-row" class="flex-1 flex">
-                <div id="slot-bottom-left" class="flex-1 relative">
-                    </div>
-                <div id="slot-bottom-right" class="flex-1 relative">
-                    </div>
+                <div id="slot-bottom-left" class="flex-1 relative"></div>
+                <div id="slot-bottom-right" class="flex-1 relative"></div>
             </div>
         </div>
 
-        <div id="footer-container" class="h-[10vh] relative flex-shrink-0">
-            </div>
+        <!-- 頁尾內容區 -->
+        <div id="footer-container" class="h-[10vh] relative flex-shrink-0"></div>
 
     </div>
 
