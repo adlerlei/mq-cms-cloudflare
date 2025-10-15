@@ -478,25 +478,79 @@ function formatFileSize(bytes) {
 }
 
 function showNotification(message, type = 'info') {
+    // Create notification container if it doesn't exist
+    let container = document.getElementById('notification-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notification-container';
+        container.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            max-width: 600px;
+            width: 90%;
+            pointer-events: none;
+        `;
+        document.body.appendChild(container);
+    }
+    
     // Create notification element
     const notification = document.createElement('div');
     notification.className = `notification is-${type}`;
+    notification.style.cssText = `
+        margin-bottom: 10px;
+        pointer-events: auto;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    `;
     notification.innerHTML = `
         <button class="delete"></button>
         ${message}
     `;
     
-    document.body.prepend(notification);
+    container.appendChild(notification);
     
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-        notification.remove();
-    }, 5000);
+    // Trigger fade-in animation
+    requestAnimationFrame(() => {
+        notification.style.opacity = '1';
+        notification.style.transform = 'translateY(0)';
+    });
+    
+    // Auto-hide duration based on type
+    const duration = {
+        'success': 2000,  // 2秒 - 成功消息
+        'info': 3000,     // 3秒 - 信息消息
+        'warning': 4000,  // 4秒 - 警告消息
+        'danger': 5000    // 5秒 - 错误消息
+    }[type] || 3000;
+    
+    // Auto-hide with fade-out
+    const autoHideTimer = setTimeout(() => {
+        fadeOutAndRemove(notification);
+    }, duration);
     
     // Handle delete button
     notification.querySelector('.delete').addEventListener('click', () => {
-        notification.remove();
+        clearTimeout(autoHideTimer);
+        fadeOutAndRemove(notification);
     });
+    
+    // Helper function to fade out and remove
+    function fadeOutAndRemove(element) {
+        element.style.opacity = '0';
+        element.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+            element.remove();
+            // Remove container if empty
+            if (container.children.length === 0) {
+                container.remove();
+            }
+        }, 300);
+    }
 }
 
 // --- EVENT HANDLERS ---
