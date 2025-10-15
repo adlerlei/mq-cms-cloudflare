@@ -1,7 +1,7 @@
 # AI Context - MQ CMS Project
 
 > **Last Updated**: 2025-01-15  
-> **Current Version**: v5.3.3  
+> **Current Version**: v5.3.4  
 > **Status**: Production Ready
 
 ## 🎯 Project Overview
@@ -69,7 +69,55 @@ interface Layout {
 }
 ```
 
-## ✅ Recently Completed (v5.3.3 - 2025-01-15)
+## ✅ Recently Completed (v5.3.4 - 2025-01-15)
+
+### 簡化管理後台 UI - 移除網格視圖
+**Problem**: 管理後台的媒體庫區塊有兩種顯示模式：
+- **表格視圖**：列表形式，顯示詳細信息（預覽、類型、狀態、操作）
+- **網格視圖**：卡片形式，視覺化展示
+
+用戶反饋網格視圖**非常不方便、不實用**，希望只保留表格視圖。
+
+**Solution**: 完全移除網格視圖相關代碼，簡化 UI 和邏輯。
+
+#### Removed Components
+1. **HTML 元素**（`public/admin.html`）:
+   - 切換按鈕（表格/網格）
+   - 網格視圖容器 `<div id="mediaGridView">`
+   - 相關的 level 布局結構
+
+2. **JavaScript 代碼**（`public/js/admin.js`）:
+   - `viewMode` 狀態變量
+   - `renderMediaLibraryGrid()` 函數（130+ 行）
+   - 切換按鈕的事件監聽器
+   - 初始視圖設置邏輯
+
+3. **簡化邏輯**:
+   ```javascript
+   // Before
+   if (appState.viewMode === 'grid') {
+       renderMediaLibraryGrid();
+   } else {
+       renderMediaLibraryTable();
+   }
+   
+   // After
+   renderMediaLibraryTable();  // 直接調用
+   ```
+
+#### Files Modified
+- `public/admin.html`: 移除 23 行（切換按鈕和網格容器）
+- `public/js/admin.js`: 移除 153 行（網格函數、狀態、監聽器）
+- `package.json`: 版本升級至 v5.3.4
+
+#### Benefits
+- ✅ **UI 更簡潔**：沒有不必要的切換選項
+- ✅ **代碼更簡單**：減少 150+ 行代碼
+- ✅ **維護更容易**：只需維護一種視圖
+- ✅ **用戶體驗更好**：表格視圖更實用，信息更清晰
+- ✅ **性能提升**：減少不必要的 DOM 操作
+
+### Previous (v5.3.3 - 2025-01-15)
 
 ### 優化生產環境性能 - 調試日誌控制
 **Problem**: 播放器控制台輸出大量調試信息（每張圖片加載、容器尺寸、WebSocket 心跳等），在生產環境中：
