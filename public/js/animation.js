@@ -479,7 +479,10 @@ function showDebugInfo() {
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
     // Toggle debug mode with Ctrl+Shift+D (or Cmd+Shift+D on Mac)
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'D') {
+    // Use keyCode or key (case-insensitive) for better compatibility
+    const isDKey = e.key === 'D' || e.key === 'd' || e.keyCode === 68;
+    
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && isDKey) {
         e.preventDefault();
         DEBUG_MODE = !DEBUG_MODE;
         console.log(`🐞 Debug mode ${DEBUG_MODE ? 'ENABLED' : 'DISABLED'}`);
@@ -487,7 +490,7 @@ document.addEventListener('keydown', (e) => {
     }
     
     // Toggle debug overlay with Ctrl+D (or Cmd+D on Mac)
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'd') {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && isDKey) {
         e.preventDefault();
         const overlay = document.getElementById('debug-overlay');
         if (overlay) {
