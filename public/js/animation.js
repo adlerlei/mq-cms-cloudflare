@@ -1,5 +1,5 @@
 // Version check
-const PLAYER_VERSION = '5.3.1';
+const PLAYER_VERSION = '5.3.2';
 
 // Global settings defaults
 const DEFAULT_INTERVALS = {
@@ -150,8 +150,22 @@ function updateSection(sectionKey, data, containerId, slideInterval) {
     if (container.slideTimer) clearInterval(container.slideTimer);
     container.innerHTML = '';
 
-    const sectionAssignments = data.assignments.filter(a => a.section_key === sectionKey);
-    console.log(`📍 Section ${sectionKey}: found ${sectionAssignments.length} assignments`);
+    // Support both new and old section_key naming conventions
+    // New: top_left, top_right, bottom_left, bottom_right
+    // Old: carousel_top_left, carousel_top_right, carousel_bottom_left, carousel_bottom_right
+    const sectionKeyAliases = {
+        'top_left': ['top_left', 'carousel_top_left'],
+        'top_right': ['top_right', 'carousel_top_right'],
+        'bottom_left': ['bottom_left', 'carousel_bottom_left'],
+        'bottom_right': ['bottom_right', 'carousel_bottom_right'],
+        'header_video': ['header_video'],
+        'header_1_video': ['header_1_video'],
+        'footer_content': ['footer_content']
+    };
+    
+    const possibleKeys = sectionKeyAliases[sectionKey] || [sectionKey];
+    const sectionAssignments = data.assignments.filter(a => possibleKeys.includes(a.section_key));
+    console.log(`📍 Section ${sectionKey} (aliases: ${possibleKeys.join(', ')}): found ${sectionAssignments.length} assignments`);
     addDebugInfo(`📍 ${sectionKey}: ${sectionAssignments.length} 個指派`);
     
     if (sectionAssignments.length === 0) return;

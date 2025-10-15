@@ -1,7 +1,7 @@
 # AI Context - MQ CMS Project
 
-> **Last Updated**: 2025-10-14  
-> **Current Version**: v5.3.1  
+> **Last Updated**: 2025-01-15  
+> **Current Version**: v5.3.2  
 > **Status**: Production Ready
 
 ## 🎯 Project Overview
@@ -69,7 +69,54 @@ interface Layout {
 }
 ```
 
-## ✅ Recently Completed (v5.3.1 - 2025-10-14)
+## ✅ Recently Completed (v5.3.2 - 2025-01-15)
+
+### 修復群組圖片輪播顯示問題
+**Problem**: 群組圖片輪播無法在播放器上顯示。管理後台顯示群組已正確指派（8張圖片），但播放頁面四個輪播區塊顯示 "found 0 assignments"，無法載入任何群組內容。
+
+**Root Cause**: section_key 命名不一致問題
+- 管理後台保存指派時使用**舊版命名**：`carousel_top_left`, `carousel_top_right`, `carousel_bottom_left`, `carousel_bottom_right`
+- 播放器 `updateSection` 函數查找時使用**新版命名**：`top_left`, `top_right`, `bottom_left`, `bottom_right`
+- 命名不匹配導致 `data.assignments.filter(a => a.section_key === sectionKey)` 返回空陣列
+
+**Solution**: 實現向後兼容的別名映射機制，同時支持新舊兩種命名方式。
+
+#### Key Implementation
+1. **Section Key 別名映射表**:
+   ```javascript
+   const sectionKeyAliases = {
+       'top_left': ['top_left', 'carousel_top_left'],
+       'top_right': ['top_right', 'carousel_top_right'],
+       'bottom_left': ['bottom_left', 'carousel_bottom_left'],
+       'bottom_right': ['bottom_right', 'carousel_bottom_right'],
+       'header_video': ['header_video'],
+       'header_1_video': ['header_1_video'],
+       'footer_content': ['footer_content']
+   };
+   ```
+
+2. **智能查找邏輯**:
+   ```javascript
+   const possibleKeys = sectionKeyAliases[sectionKey] || [sectionKey];
+   const sectionAssignments = data.assignments.filter(a => possibleKeys.includes(a.section_key));
+   ```
+
+3. **增強日誌輸出**:
+   - 控制台顯示當前查找的所有可能 section_key
+   - 幫助快速診斷命名匹配問題
+
+#### Files Modified
+- `public/js/animation.js` (lines 153-169): 添加 sectionKeyAliases 映射表和智能查找邏輯
+- `package.json` (line 3): 版本升級至 v5.3.2
+
+#### Testing Verification
+- ✅ 本地測試確認群組圖片正常顯示
+- ✅ 支持輪播偏移量設置（offset: 0, 1, 2, 3）
+- ✅ 向後兼容舊版指派數據（carousel_* 命名）
+- ✅ 新版命名（top_left 等）仍然正常工作
+- ✅ 部署到雲端後自動更新（5分鐘內）
+
+### Previous (v5.3.1 - 2025-10-14)
 
 ### 自動版本檢查與更新
 **Problem**: 部署新代碼後，已運行的播放器還在使用舊代碼，需要手動重啟才能更新。開機自動啟動時圖片無法顯示（容器尺寸為 0）。
