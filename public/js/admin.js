@@ -343,12 +343,15 @@ function renderMediaLibraryTable() {
             const assignedSection = assignment ? appState.available_sections[assignment.section_key] : null;
             
             const preview = material.type === 'image' 
-                ? `<img src="${material.url}" alt="${material.filename}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;">`
+                ? `<img src="${material.url}" alt="${material.original_filename || material.filename}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;">`
                 : `<video src="${material.url}" style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;" muted></video>`;
             
             const statusBadge = assignedSection 
                 ? `<span class="tag is-success">${assignedSection}</span>`
                 : '<span class="tag is-light">未指派</span>';
+            
+            // Use original filename if available, otherwise fall back to the generated filename
+            const displayName = material.original_filename || material.filename;
                 
             allItems.push(`
                 <tr>
@@ -358,7 +361,7 @@ function renderMediaLibraryTable() {
                                 ${preview}
                             </div>
                             <div class="media-content">
-                                <p class="is-size-7"><strong>${material.filename}</strong></p>
+                                <p class="is-size-7"><strong>${displayName}</strong></p>
                                 <p class="is-size-7 has-text-grey">${formatFileSize(material.size)}</p>
                             </div>
                         </div>
