@@ -12,13 +12,12 @@
 ```bash
 npm run dev
 ```
-訪問：http://localhost:8787
 
 ### 部署到生產環境
 ```bash
 npm run deploy
 ```
-生產地址：https://mq-cms.adler-lei.workers.dev
+生產地址：https://mq-cms.adler-lei.workers.dev/admin
 
 ---
 
