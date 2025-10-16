@@ -496,47 +496,11 @@ function showDebugInfo() {
     debugLog(`📋 Current Layout: ${currentLayoutName || 'Loading...'}`);
     debugLog(`🌐 WebSocket: ${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
     debugLog('═══════════════════════════════════════');
-    debugLog('💡 Tip: Press Ctrl+Shift+D to toggle debug mode, Ctrl+D to toggle debug overlay');
+    debugLog('💡 Debug mode enabled via URL parameter');
     updateDebugOverlay('Active');
 }
 
-// Keyboard shortcuts
-document.addEventListener('keydown', (e) => {
-    // Toggle debug mode with Ctrl+Shift+D (or Cmd+Shift+D on Mac)
-    // Use keyCode or key (case-insensitive) for better compatibility
-    const isDKey = e.key === 'D' || e.key === 'd' || e.keyCode === 68;
-    
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && isDKey) {
-        e.preventDefault();
-        DEBUG_MODE = !DEBUG_MODE;
-        console.log(`🐞 Debug mode ${DEBUG_MODE ? 'ENABLED' : 'DISABLED'}`);
-        console.log('Tip: Refresh the page to see changes');
-    }
-    
-    // Toggle debug overlay with Ctrl+D (or Cmd+D on Mac)
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && isDKey) {
-        e.preventDefault();
-        const overlay = document.getElementById('debug-overlay');
-        if (overlay) {
-            overlay.style.display = overlay.style.display === 'none' ? 'block' : 'none';
-            console.log(`Debug overlay ${overlay.style.display === 'block' ? 'shown' : 'hidden'}`);
-        }
-    }
-    
-    // Force reload with Ctrl+R (or Cmd+R on Mac)
-    if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
-        e.preventDefault();
-        console.log('🔄 Force reloading...');
-        window.location.reload(true);
-    }
-    
-    // Check version with Ctrl+V (or Cmd+V on Mac)
-    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        e.preventDefault();
-        console.log('🔍 Checking for updates...');
-        checkVersion();
-    }
-});
+// Keyboard shortcuts removed - debug mode is now controlled via URL parameter only
 
 // Manual version check function
 async function checkVersion() {

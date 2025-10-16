@@ -40,16 +40,21 @@
                     return;
                 }
                 
-                container.innerHTML = layouts.map(layout => `
-                    <a href="/display.html?deviceId=preview-${layout.name}" 
-                       class="button is-primary is-fullwidth is-large mb-3"
-                       target="_blank">
-                        <span class="icon">
-                            <i class="fas fa-play"></i>
-                        </span>
-                        <span>預覽 ${layout.name} 版面</span>
-                    </a>
-                `).join('');
+                container.innerHTML = layouts.map(layout => {
+                    // Determine the template file based on layout template
+                    const templateFile = layout.template === 'dual_video' ? 'dual_video.html' : 'default.html';
+                    
+                    return `
+                        <a href="/${templateFile}?deviceId=preview-${layout.name}&debug=true" 
+                           class="button is-primary is-fullwidth is-large mb-3"
+                           target="_blank">
+                            <span class="icon">
+                                <i class="fas fa-bug"></i>
+                            </span>
+                            <span>預覽 ${layout.name} 版面 (調試模式)</span>
+                        </a>
+                    `;
+                }).join('');
             } catch (error) {
                 console.error('Load layouts error:', error);
                 document.getElementById('layoutList').innerHTML = 
