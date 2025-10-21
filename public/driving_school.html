@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MQAD - 駕訓班交通安全宣導</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        .carousel-container { 
+            width: 100%; 
+            height: 100%; 
+            position: relative; 
+            overflow: hidden; 
+        }
+        .carousel-inner { 
+            display: flex; 
+            height: 100%;
+        }
+        .carousel-item { 
+            flex: 0 0 100%; 
+            height: 100%;
+            min-height: 0;
+        }
+        .carousel-item img { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover;
+            display: block;
+            background-color: black;
+        }
+        
+        /* 確保所有區塊都能正確縮放 */
+        #slot-zone-1, #slot-zone-2, #slot-zone-3, #slot-zone-4 {
+            min-height: 0;
+            min-width: 0;
+            position: relative;
+        }
+        
+        /* 強制設定 2x2 網格佈局 */
+        .grid-row {
+            height: 50vh;
+            display: flex;
+        }
+        .grid-cell {
+            width: 50%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="h-full w-screen flex flex-col bg-black relative">
+        <!-- Debug info overlay -->
+        <div id="debug-overlay" style="display: none; position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.9); color: white; padding: 15px; border-radius: 5px; font-size: 11px; z-index: 9999; font-family: monospace; max-width: 400px; max-height: 90vh; overflow-y: auto;">
+            <div><strong>Device ID:</strong> <span id="debug-device-id">-</span></div>
+            <div><strong>Layout:</strong> <span id="debug-layout">-</span></div>
+            <div><strong>Template:</strong> driving_school (駕訓班)</div>
+            <div><strong>Status:</strong> <span id="debug-status">Loading...</span></div>
+            <hr style="border-color: #555; margin: 10px 0;">
+            <div id="debug-sections"></div>
+        </div>
+
+        <!-- 上半部 (50%) -->
+        <div class="grid-row">
+            <!-- 左上區塊 (50%) -->
+            <div id="slot-zone-1" class="grid-cell"></div>
+            <!-- 右上區塊 (50%) -->
+            <div id="slot-zone-2" class="grid-cell"></div>
+        </div>
+
+        <!-- 下半部 (50%) -->
+        <div class="grid-row">
+            <!-- 左下區塊 (50%) -->
+            <div id="slot-zone-3" class="grid-cell"></div>
+            <!-- 右下區塊 (50%) -->
+            <div id="slot-zone-4" class="grid-cell"></div>
+        </div>
+
+    </div>
+
+    <script src="js/animation.js"></script>
+
+</body>
+</html>

@@ -85,14 +85,14 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
     if (!containerElement) return;
     const inner = containerElement.querySelector(".carousel-inner");
     if (!inner) return;
-    const items = inner.querySelectorAll(".carousel-item");
+    const originalItems = inner.querySelectorAll(".carousel-item");
 
     if (containerElement.slideTimer) clearTimeout(containerElement.slideTimer);
 
-    if (items.length <= 1) {
+    if (originalItems.length <= 1) {
         inner.style.transform = "translateX(0)";
-        if (items.length === 1) {
-            const media = items[0].querySelector('video, img');
+        if (originalItems.length === 1) {
+            const media = originalItems[0].querySelector('video, img');
             if (media && media.tagName === 'VIDEO') {
                 media.loop = true;
                 media.play().catch(e => console.warn("Single video playback failed:", e));
@@ -101,18 +101,26 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
         return;
     }
 
+    // Clone first item and append to end for infinite loop effect
+    const firstClone = originalItems[0].cloneNode(true);
+    firstClone.classList.add('carousel-clone');
+    inner.appendChild(firstClone);
+    
+    const items = inner.querySelectorAll(".carousel-item");
+    const realItemCount = originalItems.length;
+
     // Use outerContainer (the section container) to persist carousel state across DOM reconstructions
     const stateContainer = outerContainer || containerElement;
     
     // Preserve current carousel position if container was already initialized
     // This prevents the carousel from resetting to startOffset on every update
     let currentIndex;
-    if (stateContainer._currentCarouselIndex !== undefined && stateContainer._currentCarouselIndex < items.length) {
+    if (stateContainer._currentCarouselIndex !== undefined && stateContainer._currentCarouselIndex < realItemCount) {
         currentIndex = stateContainer._currentCarouselIndex;
-        debugLog(`🔄 Carousel re-initialized: preserving position=${currentIndex}, items.length=${items.length}`);
+        debugLog(`🔄 Carousel re-initialized: preserving position=${currentIndex}, items.length=${realItemCount}`);
     } else {
-        currentIndex = Math.max(0, Math.min(startOffset, items.length - 1));
-        debugLog(`🔄 Carousel initialized: startOffset=${startOffset}, items.length=${items.length}, currentIndex=${currentIndex}`);
+        currentIndex = Math.max(0, Math.min(startOffset, realItemCount - 1));
+        debugLog(`🔄 Carousel initialized: startOffset=${startOffset}, items.length=${realItemCount}, currentIndex=${currentIndex}`);
     }
     
     inner.style.transition = "none";
@@ -127,25 +135,32 @@ function initializeGenericCarousel(containerElement, slideInterval, startOffset 
         if (prevVideo) prevVideo.removeEventListener('ended', playNext);
 
         currentIndex++;
-        stateContainer._currentCarouselIndex = currentIndex % items.length; // Save current position
+        
+        // Always animate to next position
         inner.style.transition = "transform 0.5s ease";
         inner.style.transform = `translateX(-${currentIndex * 100}%)`;
-
-        inner.addEventListener('transitionend', () => {
-            if (currentIndex >= items.length) {
+        
+        // If we just moved to the clone (last position), reset to real first item after animation
+        if (currentIndex >= realItemCount) {
+            inner.addEventListener('transitionend', function handleTransitionEnd() {
+                inner.removeEventListener('transitionend', handleTransitionEnd);
                 inner.style.transition = 'none';
                 currentIndex = 0;
-                stateContainer._currentCarouselIndex = 0; // Save reset position
+                stateContainer._currentCarouselIndex = 0;
                 inner.style.transform = `translateX(0%)`;
-                setTimeout(playCurrent, 20);
-            }
-        }, { once: true });
-
-        playCurrent();
+                void inner.offsetWidth;
+            }, { once: true });
+        }
+        
+        stateContainer._currentCarouselIndex = currentIndex % realItemCount;
+        
+        // Wait for transition to complete before playing current
+        setTimeout(playCurrent, 500);
     }
 
     function playCurrent() {
-        const currentItem = items[currentIndex % items.length];
+        const actualIndex = currentIndex % realItemCount;
+        const currentItem = items[actualIndex];
         const mediaElement = currentItem.querySelector('video, img');
 
         if (mediaElement && mediaElement.tagName === 'VIDEO') {
@@ -390,6 +405,12 @@ function updateAllSections(data) {
         
         // 双影片布局的额外区块
         { sectionKey: 'header_1_video', containerId: 'header-1-container', interval: intervals.header },
+        
+        // 驾训班-交通安全宣导布局的区块
+        { sectionKey: 'zone_1', containerId: 'slot-zone-1', interval: intervals.carousel },
+        { sectionKey: 'zone_2', containerId: 'slot-zone-2', interval: intervals.carousel },
+        { sectionKey: 'zone_3', containerId: 'slot-zone-3', interval: intervals.carousel },
+        { sectionKey: 'zone_4', containerId: 'slot-zone-4', interval: intervals.carousel },
         
         // 保留旧的 section_key 命名（向后兼容）
         { sectionKey: 'carousel_top_left', containerId: 'slot-top-left', interval: intervals.carousel },

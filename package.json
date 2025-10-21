@@ -1,6 +1,6 @@
 {
 	"name": "mq-cms",
-	"version": "5.3.6",
+	"version": "5.4.2",
 	"private": true,
 	"scripts": {
 		"deploy": "wrangler deploy",

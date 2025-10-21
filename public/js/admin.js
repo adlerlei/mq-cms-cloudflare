@@ -22,6 +22,15 @@ const LAYOUT_TEMPLATES = {
             "bottom_right": "右下輪播區",
             "footer_content": "頁尾內容區"
         }
+    },
+    "driving_school": {
+        name: "駕訓班-交通安全宣導",
+        sections: {
+            "zone_1": "左上區塊",
+            "zone_2": "右上區塊",
+            "zone_3": "左下區塊",
+            "zone_4": "右下區塊"
+        }
     }
 };
 
@@ -582,7 +591,8 @@ async function handleCreateLayout(e) {
         
         input.value = '';
         templateSelect.value = 'default';
-        showNotification(`版面 "${name}" (${template === 'default' ? '預設佈局' : '雙影片佈局'}) 建立成功。`, 'success');
+        const templateName = LAYOUT_TEMPLATES[template]?.name || template;
+        showNotification(`版面 "${name}" (${templateName}) 建立成功。`, 'success');
         
         const newLayouts = [...appState.layouts, newLayout];
         setState({ layouts: newLayouts });

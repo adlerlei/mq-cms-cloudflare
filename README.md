@@ -163,6 +163,67 @@ mq-cms-cloudflare/
 
 ---
 
+## 創建新的版面流程
+創建新模板的完整步驟
+
+   目前系統有兩個模板：
+   - default.html - 6區塊佈局
+   - dual_video.html - 5區塊佈局
+
+   步驟 1：創建新的 HTML 模板文件
+
+   在 public/ 目錄下創建新的播放器模板，例如 triple_video.html：
+```html
+     <!DOCTYPE html>
+     <html>
+     <head>
+         <title>三影片佈局</title>
+         <style>
+             /* 你的自訂 CSS 佈局 */
+         </style>
+     </head>
+     <body>
+         <div id="slot-header-video"></div>
+         <div id="slot-middle-video"></div>
+         <div id="slot-footer-video"></div>
+         <!-- 定義你的區塊結構 -->
+     </body>
+     <script src="/js/animation.js"></script>
+     </html>
+```
+   步驟 2：更新 admin.js 的模板配置
+
+   在 public/js/admin.js 中的 LAYOUT_TEMPLATES 添加新模板：
+```javascript
+     const LAYOUT_TEMPLATES = {
+         "default": { ... },
+         "dual_video": { ... },
+         "triple_video": {  // 新增
+             name: "三影片佈局",
+             sections: {
+                 "header_video": "頂部影片區",
+                 "middle_video": "中間影片區",
+                 "footer_video": "底部影片區"
+             }
+         }
+     };
+```
+   步驟 3：更新管理界面的模板選項
+
+   在 public/admin.html 的模板下拉選單添加新選項：
+```html
+     <select id="layoutTemplateSelect" required>
+         <option value="default">預設佈局（六區塊）</option>
+         <option value="dual_video">雙影片佈局</option>
+         <option value="triple_video">三影片佈局</option>  <!-- 新增 -->
+     </select>
+```
+   步驟 4：更新 preview.html（如果需要）
+
+   確保預覽頁面能正確路由到新模板。
+
+---
+
 ## 版本歷史重點
 
 ### v5.3.6 (2025-10-17)

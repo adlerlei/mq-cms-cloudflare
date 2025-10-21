@@ -42,7 +42,12 @@
                 
                 container.innerHTML = layouts.map(layout => {
                     // Determine the template file based on layout template
-                    const templateFile = layout.template === 'dual_video' ? 'dual_video.html' : 'default.html';
+                    let templateFile = 'default.html';
+                    if (layout.template === 'dual_video') {
+                        templateFile = 'dual_video.html';
+                    } else if (layout.template === 'driving_school') {
+                        templateFile = 'driving_school.html';
+                    }
                     
                     return `
                         <a href="/${templateFile}?deviceId=preview-${layout.name}&debug=true" 

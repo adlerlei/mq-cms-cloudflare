@@ -1,7 +1,7 @@
 # AI Context - MQ CMS Project
 
-> **Last Updated**: 2025-10-17  
-> **Current Version**: v5.3.6  
+> **Last Updated**: 2025-10-21  
+> **Current Version**: v5.4.2  
 > **Status**: Production Ready  
 > **Language**: Traditional Chinese (繁體中文)
 
@@ -39,6 +39,7 @@ mq-cms-cloudflare/
 │   ├── preview.html          # Layout preview selector (auto-debug enabled)
 │   ├── default.html          # Default 6-block layout template
 │   ├── dual_video.html       # Dual video 5-block layout template
+│   ├── driving_school.html   # Driving school 4-zone layout template
 │   ├── js/
 │   │   ├── admin.js          # Admin logic
 │   │   └── animation.js      # Player carousel logic
@@ -47,7 +48,7 @@ mq-cms-cloudflare/
 │       ├── admin.css         # Admin styles
 │       └── admin-flow-layout.css  # Flow layout
 ├── wrangler.toml             # Cloudflare config
-└── package.json              # Dependencies (v5.3.6)
+└── package.json              # Dependencies (v5.4.2)
 ```
 
 ---
@@ -111,6 +112,12 @@ interface Layout {
 - `bottom_left`, `bottom_right` - Bottom carousel sections
 - `footer_content` - Footer area
 
+**Driving School Template** (4 sections, 2x2 grid):
+- `zone_1` - Top-left (50% width × 50% height)
+- `zone_2` - Top-right (50% width × 50% height)
+- `zone_3` - Bottom-left (50% width × 50% height)
+- `zone_4` - Bottom-right (50% width × 50% height)
+
 **Legacy Aliases** (supported for backward compatibility):
 - `carousel_top_left` → `top_left`
 - `carousel_top_right` → `top_right`
@@ -120,6 +127,88 @@ interface Layout {
 ---
 
 ## 🔧 Recent Major Changes
+
+### v5.4.2 (2025-10-21) - Carousel Animation Fix
+
+**Critical Bug Fix**: Fixed carousel infinite loop animation issue.
+
+**Problem Solved**:
+- ❌ Previous: Carousel showed blank screen or jumped without animation when looping back to first slide
+- ✅ Now: Smooth sliding animation for all transitions using standard infinite carousel technique
+
+**Implementation**:
+1. **Clone First Item**: Append a clone of the first item to the end of the carousel
+2. **Seamless Loop**: When reaching the clone, slide to it with animation, then instantly reset to real first item
+3. **User Experience**: Users see continuous smooth sliding without any jumps or blank screens
+
+**Technical Details**:
+```
+Original: [A] [B] [C]
+Modified: [A] [B] [C] [A-clone]
+
+Flow: A → B → C → A-clone (animated) → instant reset to A (invisible) → loop
+User sees: A → B → C → A → B → C (perfect loop!)
+```
+
+**Modified File**: `public/js/animation.js`
+- Added first item cloning logic in `initializeGenericCarousel()`
+- Updated `playNext()` to handle clone detection and seamless reset
+- Fixed `playCurrent()` to use correct index calculation
+
+**Benefits**:
+- ✅ All transitions have smooth sliding animation
+- ✅ No blank screens between last and first slide
+- ✅ No jarring jumps or instant transitions
+- ✅ Works with any number of slides (2, 3, 5, 10+)
+- ✅ Industry-standard infinite carousel implementation
+
+---
+
+### v5.4.0 (2025-10-21) - New Template: Driving School Layout
+
+**Feature**: Added new template "driving_school" for vertical digital signage (1080x1920).
+
+**Use Case**: Traffic safety promotion content for driving schools.
+
+**Layout Structure**:
+- 4 equal zones in 2x2 grid layout (50% width, 50% height each)
+- Pure image carousel (no video support needed)
+- Optimized for portrait orientation (1080x1920)
+
+**Changes**:
+
+1. **New Template File**: `public/driving_school.html`
+   - 4 zones: `zone_1` (左上), `zone_2` (右上), `zone_3` (左下), `zone_4` (右下)
+   - Grid layout: 2x2 (each zone 50% width × 50% height)
+   - Tailwind CSS flexbox layout
+   - Debug overlay support
+
+2. **Template Configuration**: `public/js/admin.js`
+   - Added "driving_school" to `LAYOUT_TEMPLATES`
+   - Section keys: `zone_1`, `zone_2`, `zone_3`, `zone_4`
+   - Chinese labels: "左上區塊", "右上區塊", "左下區塊", "右下區塊"
+   - Dynamic template name in success notification
+
+3. **Admin Interface**: `public/admin.html`
+   - Added dropdown option: "駕訓班-交通安全宣導"
+   - Template selector updated
+
+4. **Preview System**: `public/preview.html`
+   - Added routing for `driving_school.html`
+   - Automatic template file detection
+
+5. **Animation Engine**: `public/js/animation.js`
+   - Added section mappings for `zone_1` through `zone_4`
+   - Maps to container IDs: `slot-zone-1` through `slot-zone-4`
+   - Uses carousel intervals for all zones
+
+**Benefits**:
+- ✅ Easy to extend: Clean template architecture
+- ✅ Reusable: Same carousel logic as other templates
+- ✅ Maintainable: Consistent naming conventions
+- ✅ Flexible: Can be used for similar vertical layouts
+
+---
 
 ### v5.3.6 (2025-10-17) - Debug Experience Optimization
 
@@ -383,6 +472,8 @@ if (urlParams.get('debug') === 'true') {
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| v5.4.2 | 2025-10-21 | Carousel infinite loop animation fix (clone technique) |
+| v5.4.0 | 2025-10-21 | New template: Driving school (4-zone portrait) |
 | v5.3.6 | 2025-10-17 | Debug button, remove keyboard shortcuts |
 | v5.3.5 | 2025-10-16 | Carousel offset persistence fix |
 | v5.3.4 | 2025-10-16 | Remove grid view |
