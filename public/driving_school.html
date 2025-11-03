@@ -6,11 +6,16 @@
     <title>MQAD - 駕訓班交通安全宣導</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        html, body {
-            height: 100%;
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100vw;
+            height: 100vh;
             overflow: hidden;
+            background-color: black;
         }
         .carousel-container { 
             width: 100%; 
@@ -21,42 +26,50 @@
         .carousel-inner { 
             display: flex; 
             height: 100%;
+            width: 100%;
         }
         .carousel-item { 
             flex: 0 0 100%; 
-            height: 100%;
-            min-height: 0;
-        }
-        .carousel-item img { 
-            width: 100%; 
-            height: 100%; 
-            object-fit: cover;
-            display: block;
-            background-color: black;
-        }
-        
-        /* 確保所有區塊都能正確縮放 */
-        #slot-zone-1, #slot-zone-2, #slot-zone-3, #slot-zone-4 {
-            min-height: 0;
-            min-width: 0;
-            position: relative;
-        }
-        
-        /* 強制設定 2x2 網格佈局 */
-        .grid-row {
-            height: 50vh;
-            display: flex;
-        }
-        .grid-cell {
-            width: 50%;
+            width: 100%;
             height: 100%;
             position: relative;
             overflow: hidden;
         }
+        .carousel-item img { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain;
+            display: block;
+            background-color: black;
+        }
+        .carousel-item video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+            background-color: black;
+        }
+        
+        /* 上下兩區塊佈局 */
+        #slot-zone-1 {
+            width: 100%;
+            height: 570px;
+            position: relative;
+            overflow: hidden;
+            background-color: black;
+        }
+        
+        #slot-zone-2 {
+            width: 100%;
+            height: 1350px;
+            position: relative;
+            overflow: hidden;
+            background-color: black;
+        }
     </style>
 </head>
 <body>
-    <div class="h-full w-screen flex flex-col bg-black relative">
+    <div style="width: 100vw; height: 100vh; overflow: hidden; background-color: black; position: relative;">
         <!-- Debug info overlay -->
         <div id="debug-overlay" style="display: none; position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.9); color: white; padding: 15px; border-radius: 5px; font-size: 11px; z-index: 9999; font-family: monospace; max-width: 400px; max-height: 90vh; overflow-y: auto;">
             <div><strong>Device ID:</strong> <span id="debug-device-id">-</span></div>
@@ -67,21 +80,11 @@
             <div id="debug-sections"></div>
         </div>
 
-        <!-- 上半部 (50%) -->
-        <div class="grid-row">
-            <!-- 左上區塊 (50%) -->
-            <div id="slot-zone-1" class="grid-cell"></div>
-            <!-- 右上區塊 (50%) -->
-            <div id="slot-zone-2" class="grid-cell"></div>
-        </div>
+        <!-- 上區塊 (570px) - 標題圖片 -->
+        <div id="slot-zone-1"></div>
 
-        <!-- 下半部 (50%) -->
-        <div class="grid-row">
-            <!-- 左下區塊 (50%) -->
-            <div id="slot-zone-3" class="grid-cell"></div>
-            <!-- 右下區塊 (50%) -->
-            <div id="slot-zone-4" class="grid-cell"></div>
-        </div>
+        <!-- 下區塊 (1350px) - A4 宣傳文宣 -->
+        <div id="slot-zone-2"></div>
 
     </div>
 

@@ -406,11 +406,9 @@ function updateAllSections(data) {
         // 双影片布局的额外区块
         { sectionKey: 'header_1_video', containerId: 'header-1-container', interval: intervals.header },
         
-        // 驾训班-交通安全宣导布局的区块
+        // 驾训班-交通安全宣导布局的区块 (2區塊：上570px + 下1350px)
         { sectionKey: 'zone_1', containerId: 'slot-zone-1', interval: intervals.carousel },
         { sectionKey: 'zone_2', containerId: 'slot-zone-2', interval: intervals.carousel },
-        { sectionKey: 'zone_3', containerId: 'slot-zone-3', interval: intervals.carousel },
-        { sectionKey: 'zone_4', containerId: 'slot-zone-4', interval: intervals.carousel },
         
         // 保留旧的 section_key 命名（向后兼容）
         { sectionKey: 'carousel_top_left', containerId: 'slot-top-left', interval: intervals.carousel },
