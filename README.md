@@ -62,25 +62,6 @@ npm run deploy
 
 ---
 
-## 項目結構
-
-```
-mq-cms-cloudflare/
-├── src/
-│   └── index.ts              # Worker 主程式 + API
-├── public/
-│   ├── admin.html            # 管理後台
-│   ├── default.html          # 預設布局模板
-│   ├── dual_video.html       # 雙影片布局模板
-│   └── js/
-│       ├── admin.js          # 管理後台邏輯
-│       └── animation.js      # 播放器邏輯
-├── wrangler.toml             # Cloudflare 配置
-└── package.json              # 依賴配置
-```
-
----
-
 ## 配置說明
 
 ### Cloudflare 設定
