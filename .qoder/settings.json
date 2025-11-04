@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "ask": [
+      "Read(!/Users/jianyin/Documents/mq-cms-cloudflare/**)",
+      "Edit(!/Users/jianyin/Documents/mq-cms-cloudflare/**)"
+    ],
+    "allow": [
+      "Read(/Users/jianyin/Documents/mq-cms-cloudflare/**)",
+      "Edit(/Users/jianyin/Documents/mq-cms-cloudflare/**)"
+    ]
+  },
+  "memoryImport": {},
+  "monitoring": {}
+}

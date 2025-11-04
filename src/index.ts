@@ -583,7 +583,8 @@ export default {
 							const templateMap: Record<string, string> = {
 								'default': 'default.html',
 								'dual_video': 'dual_video.html',
-								'driving_school': 'driving_school.html'
+								'driving_school': 'driving_school.html',
+								'office': 'office.html'
 							};
 							templateHtml = templateMap[layout.template] || 'default.html';
 							console.log(`[Template Routing] Layout: ${layoutName}, Template: ${layout.template}, HTML: ${templateHtml}`);

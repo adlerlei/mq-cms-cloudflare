@@ -29,6 +29,13 @@ const LAYOUT_TEMPLATES = {
             "zone_1": "上區塊 (570px - 標題圖片)",
             "zone_2": "下區塊 (1350px - 宣傳文宣)"
         }
+    },
+    "office": {
+        name: "駕訓班辦公室",
+        sections: {
+            "zone_1": "上區塊 (570px - 標題圖片)",
+            "zone_2": "下區塊 (1350px - 宣傳文宣)"
+        }
     }
 };
 

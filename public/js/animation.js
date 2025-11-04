@@ -410,6 +410,10 @@ function updateAllSections(data) {
         { sectionKey: 'zone_1', containerId: 'slot-zone-1', interval: intervals.carousel },
         { sectionKey: 'zone_2', containerId: 'slot-zone-2', interval: intervals.carousel },
         
+        // 驾训班办布局的区块 (2區塊：上570px + 下1350px)
+        { sectionKey: 'zone_1', containerId: 'slot-zone-1', interval: intervals.carousel },
+        { sectionKey: 'zone_2', containerId: 'slot-zone-2', interval: intervals.carousel },
+        
         // 保留旧的 section_key 命名（向后兼容）
         { sectionKey: 'carousel_top_left', containerId: 'slot-top-left', interval: intervals.carousel },
         { sectionKey: 'carousel_top_right', containerId: 'slot-top-right', interval: intervals.carousel },
