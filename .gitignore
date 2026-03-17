@@ -7,6 +7,9 @@ Thumbs.db
 工作日誌.md
 .claude
 worker-configuration.d.ts
+.qoder
+notes/*
+
 
 # Node / Javascript
 node_modules/
