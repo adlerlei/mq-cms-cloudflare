@@ -606,6 +606,14 @@ export default {
 			return env.ASSETS.fetch(templateRequest);
 		}
 
+		// Handle root path /
+		if (url.pathname === '/') {
+			return new Response(null, {
+				status: 302,
+				headers: { 'Location': '/admin' }
+			});
+		}
+
 		// Handle static file serving with ASSETS binding
 		if (env.ASSETS) {
 			return env.ASSETS.fetch(request);

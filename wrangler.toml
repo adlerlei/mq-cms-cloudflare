@@ -32,9 +32,9 @@ new_sqlite_classes = ["MessageBroadcaster"]
 # 用於儲存版面 (Layouts) 的資料
 [[kv_namespaces]]
 binding = "layout" 
-id = "c2832969aef948f1b080d217eb57142f"
+id = "e2f339678d9f45f7a2bd1113f1e04ab4"
 
 # 用於儲存設備 (Devices) 指派關係的資料
 [[kv_namespaces]]
 binding = "device"
-id = "df78697054c74d40953e1ff58cea5a0e"
+id = "3bee0eb5f2b64256aaa9e65dec483715"
